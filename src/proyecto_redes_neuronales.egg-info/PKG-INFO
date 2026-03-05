@@ -1,0 +1,138 @@
+Metadata-Version: 2.4
+Name: proyecto-redes-neuronales
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: biopython>=1.86
+Requires-Dist: matplotlib>=3.10.8
+Requires-Dist: numpy>=2.4.2
+Requires-Dist: pandas>=3.0.1
+Requires-Dist: requests>=2.32.5
+Requires-Dist: scikit-learn>=1.8.0
+Requires-Dist: seaborn>=0.13.2
+Requires-Dist: torch>=2.10.0
+Requires-Dist: typer>=0.24.1
+
+# Predicción de resistencia antimicrobiana con redes neuronales
+
+Proyecto académico: clasificación binaria de resistencia/susceptibilidad antibiótica en bacterias del grupo ESKAPE a partir de secuencias genómicas completas (WGS), usando un MLP baseline y un modelo BiGRU + Attention.
+
+---
+
+## Requisitos
+
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (gestor de paquetes)
+
+## Instalación
+
+```bash
+# Clonar el repositorio
+git clone <url-del-repo>
+cd proyecto_redes_neuronales
+
+# Instalar dependencias
+uv sync
+```
+
+---
+
+## Uso
+
+> **Nota:** El pipeline completo se irá documentando conforme se implementen las fases.
+> Ver `PROGRESS.md` para el estado actual.
+
+### 1. Descargar etiquetas AMR
+
+Descarga las etiquetas de resistencia/susceptibilidad para todos los organismos ESKAPE desde BV-BRC y las guarda como CSV.
+
+```bash
+uv run python -c "
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+import sys
+sys.path.insert(0, 'src')
+from pathlib import Path
+from bvbrc import fetch_amr_labels
+
+fetch_amr_labels(output_path=Path('data/processed/amr_labels.csv'))
+"
+```
+
+### 2. Descargar genomas FASTA
+
+Descarga los archivos FASTA de una lista de genome_id. Normalmente se corre después del paso 1, usando los IDs que tienen etiquetas válidas.
+
+```bash
+uv run python -c "
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
+import sys, pandas
+sys.path.insert(0, 'src')
+from pathlib import Path
+from bvbrc import download_multiple_genomes_fasta
+
+# Leer los genome_id del CSV de etiquetas
+labels = pandas.read_csv('data/processed/amr_labels.csv')
+genome_ids = labels['genome_id'].unique().tolist()
+
+download_multiple_genomes_fasta(
+    genome_ids=genome_ids,
+    output_directory=Path('data/raw/fasta'),
+)
+"
+```
+
+---
+
+## Tests
+
+```bash
+# Correr todos los tests
+uv run pytest
+
+# Con output detallado
+uv run pytest -v
+
+# Un módulo específico
+uv run pytest tests/bvbrc/test_amr.py -v
+```
+
+---
+
+## Estructura del proyecto
+
+```
+proyecto_redes_neuronales/
+├── src/
+│   ├── bvbrc/            # Descarga de datos desde BV-BRC
+│   │   ├── _http.py      #   Utilidades HTTP compartidas
+│   │   ├── amr.py        #   Etiquetas AMR (genome_amr endpoint)
+│   │   └── genomes.py    #   Genomas FASTA (genome_sequence endpoint)
+│   ├── data_pipeline.py  # Preprocesamiento: etiquetas, k-meros, splits
+│   ├── models.py         # Definición de MLP y BiGRU+Attention
+│   └── train.py          # Loop de entrenamiento y evaluación
+├── tests/
+│   └── bvbrc/            # Unit tests del paquete bvbrc
+├── data/
+│   ├── raw/              # Genomas FASTA descargados
+│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy)
+├── results/              # Métricas, gráficas, checkpoints
+├── notebooks/            # Exploración y visualización
+├── docs/
+│   ├── proposal/         # Propuesta del proyecto
+│   └── implementation/   # Documentación de diseño e implementación
+├── PROGRESS.md           # Estado de implementación por fases
+└── CHANGELOG.md          # Registro de cambios
+```
+
+---
+
+## Documentación
+
+- `PROGRESS.md` — plan de implementación y estado actual
+- `docs/implementation/` — decisiones de diseño, arquitectura y experimentos
+- `docs/implementation/bvbrc_api.md` — referencia de la API de BV-BRC

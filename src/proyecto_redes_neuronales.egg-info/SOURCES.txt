@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/bvbrc/__init__.py
+src/bvbrc/_http.py
+src/bvbrc/amr.py
+src/bvbrc/genomes.py
+src/proyecto_redes_neuronales.egg-info/PKG-INFO
+src/proyecto_redes_neuronales.egg-info/SOURCES.txt
+src/proyecto_redes_neuronales.egg-info/dependency_links.txt
+src/proyecto_redes_neuronales.egg-info/requires.txt
+src/proyecto_redes_neuronales.egg-info/top_level.txt

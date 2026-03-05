@@ -74,14 +74,17 @@ Red neuronal con capas completamente conectadas. En el proyecto actúa como **l�
 ### RNN (Red Neuronal Recurrente / Recurrent Neural Network)
 Arquitectura de red neuronal diseñada para procesar **secuencias ordenadas**. Mantiene un estado oculto que se actualiza en cada paso temporal, permitiendo capturar dependencias entre elementos de la secuencia. En el proyecto procesa la secuencia de k-meros del genoma.
 
-### GRU (Gated Recurrent Unit) y LSTM (Long Short-Term Memory)
-Variantes de RNN que incorporan mecanismos de "puertas" para controlar qué información se retiene o descarta a lo largo de la secuencia. Mitigan el problema del desvanecimiento del gradiente en secuencias largas. El proyecto usa una de estas dos variantes para el modelo profundo.
+### LSTM (Long Short-Term Memory)
+Red neuronal recurrente que usa tres compuertas (entrada, olvido y salida) y una celda de memoria separada para controlar qué información se retiene, actualiza o descarta a lo largo de la secuencia. A diferencia de una RNN simple que tiende a "olvidar" lo visto al inicio, la celda de memoria decide activamente qué conservar y qué descartar en cada paso, permitiendo que información relevante de posiciones lejanas siga disponible al final de la secuencia. Esto mitiga el problema del desvanecimiento del gradiente en secuencias largas.
+
+### GRU (Gated Recurrent Unit)
+Variante simplificada del LSTM que usa solo dos compuertas (reset y update), fusionando la celda de memoria y el estado oculto en una sola estructura. Logra un rendimiento similar al LSTM en muchas tareas pero con menos parámetros, lo que la hace más rápida de entrenar. El proyecto usa una de estas dos variantes para el modelo profundo.
 
 ### RNN Bidireccional
 Extensión de la RNN que procesa la secuencia en **ambas direcciones** (de inicio a fin y de fin a inicio) y combina los estados ocultos resultantes. Permite que cada posición tenga contexto tanto de lo que precede como de lo que sigue en la secuencia.
 
 ### Mecanismo de atención (Attention)
-Componente que asigna un **peso de importancia** a cada posición de la secuencia, permitiendo que el modelo se enfoque en las regiones más informativas. En el proyecto se aplica sobre los estados ocultos de la RNN bidireccional. Potencialmente mejora la exactitud y la interpretabilidad del modelo, ya que las regiones con mayor peso podrían corresponder a zonas genómicas asociadas a la resistencia.
+Componente que asigna un **peso de importancia** a cada posición de la secuencia, permitiendo que el modelo se enfoque en las regiones más informativas. En el proyecto se aplica sobre los estados ocultos de la RNN bidireccional. Potencialmente, mejora la exactitud y la interpretabilidad del modelo, ya que las regiones con mayor peso podrían corresponder a zonas genómicas asociadas a la resistencia.
 
 ---
 
@@ -92,6 +95,8 @@ División del conjunto de datos en subconjuntos de entrenamiento, validación y 
 
 ### Función de pérdida de entropía cruzada (Cross-entropy loss)
 Función de pérdida estándar para tareas de clasificación. Mide la discrepancia entre la distribución de probabilidad predicha por el modelo y la distribución real de las etiquetas.
+
+Pérdida de entropía cruzada es la función que mide qué tan equivocado está el modelo en cada predicción. Por ejemplo, si el modelo dice que un aislamiento tiene 90% de probabilidad de ser susceptible pero en realidad es resistente, la función calcula un número alto (mucho error). Si acertó con 90% de confianza, el número es bajo. El objetivo del entrenamiento es minimizar ese número.
 
 ### AdaGrad (2011)
 Algoritmo de optimización que adapta la tasa de aprendizaje **individualmente por parámetro**: los parámetros que reciben gradientes grandes se actualizan menos, y los que reciben gradientes pequeños se actualizan más. Su limitación es que acumula todos los gradientes históricos sin límite, por lo que la tasa de aprendizaje se vuelve cada vez más pequeña con el tiempo hasta casi detenerse.
