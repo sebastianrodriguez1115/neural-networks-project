@@ -4,7 +4,7 @@ amr.py
 Cliente para el endpoint genome_amr de BV-BRC.
 Descarga etiquetas de resistencia antimicrobiana (AMR) para organismos ESKAPE.
 
-Referencia de la API: docs/implementation/bvbrc_api.md
+Referencia de la API: docs/reference/bvbrc_api.md
 """
 
 import logging
@@ -15,7 +15,6 @@ import pandas
 
 from ._http import (
     BVBRC_API_BASE_URL,
-    MAX_RETRIES,
     PAGE_SIZE,
     SLEEP_BETWEEN_REQUESTS,
     make_api_request_with_retries,
@@ -50,107 +49,102 @@ AMR_FIELDS_TO_SELECT = [
 ]
 
 
-def _build_amr_rql_query(taxon_ids: list[int]) -> str:
-    """
-    Construye el query en Resource Query Language (RQL) para el endpoint genome_amr.
+class AMRFetcher:
+    """Encapsula una operación de descarga paginada del endpoint genome_amr."""
 
-    Filtros aplicados:
-        - taxon_id pertenece a la lista dada (organismos ESKAPE)
-        - evidence = Laboratory (excluye predicciones computacionales)
-        - resistant_phenotype es Resistant o Susceptible (excluye Intermediate
-          y Non-susceptible, que son etiquetas ambiguas para clasificación binaria)
-    """
-    taxon_ids_joined = ",".join(str(taxon_id) for taxon_id in taxon_ids)
+    _ENDPOINT = f"{BVBRC_API_BASE_URL}/genome_amr/"
+    _HEADERS = {"Accept": "application/json"}
+    _FIELDS = ",".join(AMR_FIELDS_TO_SELECT)
 
-    rql_query = (
-        f"and("
-        f"in(taxon_id,({taxon_ids_joined})),"
-        f"eq(evidence,Laboratory),"
-        f"in(resistant_phenotype,(Resistant,Susceptible))"
-        f")"
-    )
-    return rql_query
+    def __init__(self, taxon_ids: list[int]):
+        self._query = self._build_query(taxon_ids)
+        self._records: list[dict] = []
+        self._offset = 0
+        self._total: int | None = None
+
+    def fetch(self, output_path: Path | None = None) -> pandas.DataFrame:
+        """
+        Ejecuta la descarga paginada y retorna un DataFrame con los registros AMR.
+
+        Args:
+            output_path: Si se provee, guarda el DataFrame resultante como CSV.
+
+        Returns:
+            DataFrame con columnas definidas en AMR_FIELDS_TO_SELECT.
+        """
+        logger.info("Iniciando descarga de etiquetas AMR desde BV-BRC...")
+        while True:
+            batch_size = self._fetch_next_page()
+            if self._is_complete(batch_size):
+                break
+            time.sleep(SLEEP_BETWEEN_REQUESTS)
+        logger.info(f"Descarga completada. Total de registros obtenidos: {len(self._records)}")
+
+        df = pandas.DataFrame(self._records, columns=AMR_FIELDS_TO_SELECT)
+
+        if output_path is not None:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_path, index=False)
+            logger.info(f"Etiquetas AMR guardadas en: {output_path}")
+
+        return df
+
+    def _fetch_next_page(self) -> int:
+        logger.info(
+            f"Descargando registros {self._offset}–{self._offset + PAGE_SIZE - 1}"
+            + (f" de {self._total}" if self._total is not None else "")
+        )
+        response = make_api_request_with_retries(self._page_url(), self._HEADERS)
+        batch = response.json()
+        self._records.extend(batch)
+        self._update_total(response)
+        self._offset += PAGE_SIZE
+        return len(batch)
+
+    def _update_total(self, response) -> None:
+        if self._total is None and "Content-Range" in response.headers:
+            self._total = parse_total_records_from_content_range(response.headers["Content-Range"])
+            logger.info(f"Total de registros AMR a descargar: {self._total}")
+
+    def _is_complete(self, batch_size: int) -> bool:
+        return batch_size < PAGE_SIZE or (self._total is not None and self._offset >= self._total)
+
+    def _page_url(self) -> str:
+        return (
+            f"{self._ENDPOINT}"
+            f"?{self._query}"
+            f"&select({self._FIELDS})"
+            f"&limit({PAGE_SIZE},{self._offset})"
+            f"&sort(+genome_id)"
+        )
+
+    @staticmethod
+    def _build_query(taxon_ids: list[int]) -> str:
+        """
+        Construye la consulta en Resource Query Language (RQL) para el endpoint genome_amr.
+
+        Filtros aplicados:
+            - taxon_id pertenece a la lista dada
+            - evidence = Laboratory (excluye predicciones computacionales)
+            - resistant_phenotype es Resistant o Susceptible (excluye Intermediate
+              y Non-susceptible, que son etiquetas ambiguas para clasificación binaria)
+        """
+        taxon_ids_joined = ",".join(str(taxon_id) for taxon_id in taxon_ids)
+        return (
+            f"and("
+                f"in(taxon_id,({taxon_ids_joined})),"
+                f"eq(evidence,Laboratory),"
+                f"in(resistant_phenotype,(Resistant,Susceptible))"
+            f")"
+        )
 
 
 def fetch_amr_labels(
     taxon_ids: list[int] | None = None,
     output_path: Path | None = None,
 ) -> pandas.DataFrame:
-    """
-    Descarga las etiquetas AMR de BV-BRC para los taxones especificados.
-
-    Consulta el endpoint genome_amr con paginación automática. Filtra por
-    evidencia de laboratorio y fenotipos binarios (Resistant / Susceptible).
-
-    Args:
-        taxon_ids:   Lista de taxon IDs a consultar.
-                     Por defecto usa todos los ESKAPE (ESKAPE_TAXON_IDS).
-        output_path: Si se provee, guarda el DataFrame resultante como CSV.
-
-    Returns:
-        DataFrame con columnas definidas en AMR_FIELDS_TO_SELECT.
-    """
+    """Descarga etiquetas AMR de BV-BRC. Ver AMRFetcher.fetch para detalles."""
     if taxon_ids is None:
         taxon_ids = list(ESKAPE_TAXON_IDS.values())
-
-    rql_query = _build_amr_rql_query(taxon_ids)
-    fields_joined = ",".join(AMR_FIELDS_TO_SELECT)
-    endpoint_url = f"{BVBRC_API_BASE_URL}/genome_amr/"
-
-    # Solicitamos JSON para poder construir el DataFrame directamente
-    request_headers = {"Accept": "application/json"}
-
-    all_records = []
-    current_offset = 0
-    total_records = None  # Se llena al leer el primer Content-Range
-
-    logger.info("Iniciando descarga de etiquetas AMR desde BV-BRC...")
-
-    while True:
-        # Construir URL con los parámetros de paginación para este bloque
-        paginated_url = (
-            f"{endpoint_url}"
-            f"?{rql_query}"
-            f"&select({fields_joined})"
-            f"&limit({PAGE_SIZE},{current_offset})"
-            f"&sort(+genome_id)"  # sort obligatorio para paginación consistente
-        )
-
-        logger.info(
-            f"Descargando registros {current_offset}–{current_offset + PAGE_SIZE - 1}"
-            + (f" de {total_records}" if total_records is not None else "")
-        )
-
-        response = make_api_request_with_retries(paginated_url, request_headers)
-        batch_records = response.json()
-        all_records.extend(batch_records)
-
-        # El header Content-Range contiene el total de registros disponibles.
-        # Lo leemos solo en el primer request para evitar trabajo redundante.
-        if total_records is None and "Content-Range" in response.headers:
-            total_records = parse_total_records_from_content_range(
-                response.headers["Content-Range"]
-            )
-            logger.info(f"Total de registros AMR a descargar: {total_records}")
-
-        current_offset += PAGE_SIZE
-
-        # Condición de corte: batch incompleto (último bloque) o llegamos al total
-        if len(batch_records) < PAGE_SIZE:
-            break
-        if total_records is not None and current_offset >= total_records:
-            break
-
-        time.sleep(SLEEP_BETWEEN_REQUESTS)
-
-    logger.info(f"Descarga completada. Total de registros obtenidos: {len(all_records)}")
-
-    amr_dataframe = pandas.DataFrame(all_records, columns=AMR_FIELDS_TO_SELECT)
-
-    if output_path is not None:
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        amr_dataframe.to_csv(output_path, index=False)
-        logger.info(f"Etiquetas AMR guardadas en: {output_path}")
-
-    return amr_dataframe
+    return AMRFetcher(taxon_ids).fetch(output_path=output_path)

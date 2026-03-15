@@ -8,9 +8,25 @@
 ## Pasos del pipeline
 
 ### 1. Descarga
-- Descargar genomas en formato FASTA de PATRIC para el grupo ESKAPE u otro subconjunto definido
+- Descargar genomas en formato FASTA de BV-BRC para el grupo ESKAPE
 - Descargar las etiquetas fenotípicas (AMR phenotype dataset) asociadas a cada genoma
 - Conservar todos los antibióticos con evidencia de laboratorio (`Laboratory Method`); no filtrar por antibiótico específico
+
+#### Comandos CLI
+
+```bash
+# Descargar etiquetas AMR (rutas por defecto):
+uv run python main.py download-amr
+# Ruta personalizada:
+uv run python main.py download-amr --output data/processed/amr_labels.csv
+
+# Descarga todos los genomas del CSV (rutas por defecto):
+uv run python main.py download-genomes
+# Rutas personalizadas:
+uv run python main.py download-genomes --labels data/processed/amr_labels.csv --output-dir data/raw/fasta
+# Muestra de N genomas por especie, estratificada por fenotipo (útil para EDA):
+uv run python main.py download-genomes --sample-per-species 20 --output-dir data/raw/fasta_sample
+```
 
 ### 2. Preprocesamiento de etiquetas
 - Conservar solo etiquetas binarias: `Resistant` / `Susceptible`

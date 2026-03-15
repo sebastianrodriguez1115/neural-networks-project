@@ -1,3 +1,4 @@
 .idea/
 **/*.fna
 **/amr_labels.csv
+*.egg-info/

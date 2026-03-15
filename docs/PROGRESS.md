@@ -17,7 +17,7 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 
 ### 1.0 EDA (requisito de la clase)
 - [x] Implementar `src/eda.py` con análisis exploratorio del CSV de etiquetas
-- [x] Correr EDA sobre dataset ESKAPE completo — ver hallazgos en `docs/implementation/5_eda.md`
+- [x] Correr EDA sobre dataset ESKAPE completo — ver hallazgos en `docs/2_eda.md`
 - [x] Documentar decisiones derivadas del EDA (ver sección "Decisiones pendientes" abajo)
 - [x] Completar entregables EDA: data dictionary, leakage/confound analysis, outliers, baseline benchmark (F1=0.7366)
 - [x] EDA genómico: análisis de 89 genomas (muestra 20/especie) — longitud ~4.4 Mb, GC variable por especie, calidad buena
@@ -78,3 +78,51 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 ### Pendientes
 - [ ] Estrategia para duplicados en pipeline → pendiente confirmar (propuesta: conservar primer registro)
 - [ ] *Enterobacter spp.* ausente del dataset — investigar si taxon_id=547 captura bien los datos
+
+---
+
+## Changelog
+
+### 2026-03-04
+
+#### EDA — análisis genómico
+- Descargada muestra de 89 genomas (20/especie estratificados por fenotipo) en `data/raw/fasta_sample/`
+- Agregada función `_print_genome_analysis()` a `src/eda.py`: longitud, contigs, GC content, bases N, alertas por calidad
+- Actualizado comando `eda` en `main.py` con `--genomes-dir` opcional
+- Hallazgos: longitud media 4.4 Mb, GC muy variable por especie (32%-66%), sin genomas cortos ni con alto contenido N; 4 genomas muy fragmentados (*E. faecium*)
+
+#### EDA — entregables completados
+- Agregadas dos nuevas secciones a `src/eda.py`:
+  - `_print_outliers()`: genomas con registros extremos (>mean+3σ), antibióticos con desbalance ≥90%, etiquetas contradictorias
+  - `_print_baseline_benchmark()`: majority class global (54.0%) y por antibiótico (F1=0.7366) — piso mínimo para los modelos
+- Actualizado `docs/2_eda.md` con entregables faltantes: data dictionary, leakage/confound analysis, outliers, baseline benchmark
+
+---
+
+### 2026-03-03
+
+#### Implementación
+- Agregado `typer` como dependencia
+- Configurado `pyproject.toml` con `build-system` (setuptools) para que `src/` sea instalable sin `sys.path` hacks
+- Implementado `main.py` como CLI con tres comandos: `download-amr`, `download-genomes`, `eda`
+
+#### EDA — hallazgos del dataset ESKAPE
+- **162,170 registros**, 16,204 genomas únicos, **96 antibióticos** distintos
+- Solo 5 de 6 especies ESKAPE presentes (falta *Enterobacter spp.*)
+- Balance global: 54% Resistant / 46% Susceptible → `pos_weight = 0.8522`
+- 10,383 registros duplicados (mismo genome_id + antibiotic) — a resolver en pipeline
+- **Dim embedding antibiótico: 49** `[min(50, (96 // 2) + 1)]`
+
+#### Implementación `src/bvbrc/`
+- Refactorizado `src/bvbrc_client.py` → paquete `src/bvbrc/` con `_http.py`, `amr.py`, `genomes.py`
+- Creados 32 unit tests en `tests/bvbrc/` (todos pasando)
+- Creado `docs/reference/bvbrc_api.md` con referencia completa de la API REST de BV-BRC
+
+---
+
+### 2026-02-28
+
+#### Proyecto
+- Inicializado proyecto con `uv init`, creada estructura de carpetas
+- Agregadas dependencias principales
+- Revisión adversarial de docs de diseño: decisiones de organismos, antibióticos, BiRNN variantes, formato de almacenamiento, split por `genome_id`, reemplazo de SMOTE por `pos_weight`

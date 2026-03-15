@@ -82,7 +82,7 @@ def _print_overview(dataframe: pandas.DataFrame) -> None:
     print(f"  Antibióticos distintos:   {unique_antibiotics:>10,}")
     print(f"  Especies en el dataset:   {unique_species:>10,}")
 
-    # Regla empírica definida en docs/implementation/3_models.md
+    # Regla empírica definida en docs/4_models.md
     embedding_dim = min(50, (unique_antibiotics // 2) + 1)
     print(
         f"\n  → Dim embedding antibiótico sugerida: {embedding_dim}"

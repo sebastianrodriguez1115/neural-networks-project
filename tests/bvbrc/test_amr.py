@@ -13,8 +13,8 @@ import pytest
 
 from bvbrc.amr import (
     AMR_FIELDS_TO_SELECT,
+    AMRFetcher,
     ESKAPE_TAXON_IDS,
-    _build_amr_rql_query,
     fetch_amr_labels,
 )
 from bvbrc._http import PAGE_SIZE
@@ -42,31 +42,31 @@ def _make_fake_amr_record(genome_id: str = "1280.1", phenotype: str = "Resistant
     }
 
 
-# ── _build_amr_rql_query ───────────────────────────────────────────────────────
+# ── AMRFetcher._build_query ─────────────────────────────────────────────────────
 
 def test_query_contains_taxon_id_for_single_taxon():
-    query = _build_amr_rql_query([1280])
+    query = AMRFetcher._build_query([1280])
     assert "in(taxon_id,(1280))" in query
 
 
 def test_query_contains_all_taxon_ids():
-    query = _build_amr_rql_query([1280, 573, 470])
+    query = AMRFetcher._build_query([1280, 573, 470])
     assert "in(taxon_id,(1280,573,470))" in query
 
 
 def test_query_filters_by_laboratory_evidence():
-    query = _build_amr_rql_query([1280])
+    query = AMRFetcher._build_query([1280])
     assert "eq(evidence,Laboratory)" in query
 
 
 def test_query_includes_only_binary_phenotypes():
-    query = _build_amr_rql_query([1280])
+    query = AMRFetcher._build_query([1280])
     assert "in(resistant_phenotype,(Resistant,Susceptible))" in query
 
 
 def test_query_implicitly_excludes_intermediate():
     """Intermediate must not appear as an allowed value in the query."""
-    query = _build_amr_rql_query([1280])
+    query = AMRFetcher._build_query([1280])
     assert "Intermediate" not in query
 
 
@@ -106,7 +106,7 @@ def test_returns_empty_dataframe_when_no_records():
 def test_paginates_until_batch_is_smaller_than_page_size():
     """
     Simulates two pages: first returns PAGE_SIZE records (more available),
-    second returns fewer (last page). Total must be PAGE_SIZE + 1.
+    the second returns fewer (last page). Total must be PAGE_SIZE + 1.
     """
     first_batch = [_make_fake_amr_record(f"1280.{i}") for i in range(PAGE_SIZE)]
     second_batch = [_make_fake_amr_record("1280.99999")]

@@ -19,14 +19,15 @@ Clasificación binaria (Resistant / Susceptible) sobre organismos ESKAPE. El ant
 | `src/models.py` | Definición de MLP y BiGRU+Attention |
 | `src/train.py` | Loop de entrenamiento, métricas, early stopping |
 | `main.py` | Punto de entrada |
-| `PROGRESS.md` | Estado actual de implementación — actualizar al completar tareas |
-| `CHANGELOG.md` | Registro de cambios — actualizar al final de cada sesión significativa |
+| `docs/PROGRESS.md` | Estado actual de implementación — actualizar al completar tareas |
+| `docs/PROGRESS.md` | Changelog al final del archivo — actualizar al terminar cada sesión significativa |
 
 ## Documentación de referencia
-- `docs/implementation/1_environment.md` — stack y estructura
-- `docs/implementation/2_data_pipeline.md` — pipeline de datos (decisivo para `bvbrc_client.py` y `data_pipeline.py`)
-- `docs/implementation/3_models.md` — arquitecturas y decisiones de diseño
-- `docs/implementation/4_experiments.md` — experimentos y criterio de éxito
+- `docs/1_environment.md` — stack, estructura, instalación y comandos CLI
+- `docs/2_eda.md` — hallazgos del EDA (pos_weight, desbalance, baseline benchmark)
+- `docs/3_data_pipeline.md` — pipeline de datos (decisivo para `bvbrc_client.py` y `data_pipeline.py`)
+- `docs/4_models.md` — arquitecturas y decisiones de diseño
+- `docs/5_experiments.md` — experimentos y criterio de éxito
 
 ## Convenciones
 - **Código en inglés** — esto incluye nombres de funciones, variables, clases, comentarios en código y tests
@@ -38,6 +39,6 @@ Clasificación binaria (Resistant / Susceptible) sobre organismos ESKAPE. El ant
 - Early stopping: patience=10 sobre pérdida de validación; F1 solo para selección final
 
 ## Al terminar una tarea
-1. Marcar como completada en `PROGRESS.md`
-2. Si el cambio es significativo, agregar entrada en `CHANGELOG.md`
+1. Marcar como completada en `docs/PROGRESS.md`
+2. Si el cambio es significativo, agregar entrada en la sección Changelog de `docs/PROGRESS.md`
 3. Revisar si el `README.md` necesita actualizarse (nuevos comandos, cambios en estructura, etc.)

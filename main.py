@@ -32,7 +32,28 @@ app = typer.Typer(
 )
 
 
-@app.command()
+def _sample_genome_ids(amr_labels: pandas.DataFrame, n_per_species: int) -> list[str]:
+    """Selecciona hasta n genomas por especie, estratificados por fenotipo mayoritario."""
+    amr_dedup = amr_labels.drop_duplicates(subset=["genome_id", "antibiotic"])
+    sample_ids = []
+
+    for taxon_id, group in amr_dedup.groupby("taxon_id"):
+        genome_phenotype = (
+            group.groupby("genome_id")["resistant_phenotype"]
+            .agg(lambda x: x.value_counts().index[0])
+            .reset_index()
+        )
+        n_each = n_per_species // 2
+        resistant = genome_phenotype[genome_phenotype["resistant_phenotype"] == "Resistant"]["genome_id"]
+        susceptible = genome_phenotype[genome_phenotype["resistant_phenotype"] == "Susceptible"]["genome_id"]
+
+        sample_ids.extend(resistant.sample(min(n_each, len(resistant)), random_state=42).tolist())
+        sample_ids.extend(susceptible.sample(min(n_each, len(susceptible)), random_state=42).tolist())
+
+    return [str(gid) for gid in sample_ids]
+
+
+@app.command(help="Descarga etiquetas AMR (Resistant/Susceptible) de BV-BRC para todos los organismos ESKAPE y las guarda como CSV.")
 def download_amr(
     output: Path = typer.Option(
         Path("data/processed/amr_labels.csv"),
@@ -50,7 +71,7 @@ def download_amr(
     typer.echo(f"Listo. Etiquetas guardadas en: {output}")
 
 
-@app.command()
+@app.command(help="Descarga archivos FASTA de los genomas listados en el CSV de etiquetas. Usa --sample-per-species para una muestra estratificada por especie y fenotipo.")
 def download_genomes(
     labels: Path = typer.Option(
         Path("data/processed/amr_labels.csv"),
@@ -70,6 +91,8 @@ def download_genomes(
 
     Solo descarga los genomas que tengan al menos una etiqueta AMR válida.
     Omite genomas cuyo archivo .fna ya exista en output_dir.
+    Usa --sample-per-species para descargar una muestra estratificada por especie
+    (mitad Resistant, mitad Susceptible), útil para EDA sin descargar el dataset completo.
     """
     if not labels.exists():
         typer.echo(f"Error: no se encontró el archivo de etiquetas: {labels}", err=True)
@@ -94,28 +117,7 @@ def download_genomes(
     typer.echo(f"Descarga finalizada. Exitosos: {len(results)}/{len(genome_ids)}")
 
 
-def _sample_genome_ids(amr_labels: pandas.DataFrame, n_per_species: int) -> list[str]:
-    """Selecciona hasta n genomas por especie, estratificados por fenotipo mayoritario."""
-    amr_dedup = amr_labels.drop_duplicates(subset=["genome_id", "antibiotic"])
-    sample_ids = []
-
-    for taxon_id, group in amr_dedup.groupby("taxon_id"):
-        genome_phenotype = (
-            group.groupby("genome_id")["resistant_phenotype"]
-            .agg(lambda x: x.value_counts().index[0])
-            .reset_index()
-        )
-        n_each = n_per_species // 2
-        resistant = genome_phenotype[genome_phenotype["resistant_phenotype"] == "Resistant"]["genome_id"]
-        susceptible = genome_phenotype[genome_phenotype["resistant_phenotype"] == "Susceptible"]["genome_id"]
-
-        sample_ids.extend(resistant.sample(min(n_each, len(resistant)), random_state=42).tolist())
-        sample_ids.extend(susceptible.sample(min(n_each, len(susceptible)), random_state=42).tolist())
-
-    return [str(gid) for gid in sample_ids]
-
-
-@app.command()
+@app.command(help="Análisis exploratorio del dataset: distribución por especie, balance de clases, ranking de antibióticos, outliers, baseline benchmark y calidad genómica.")
 def eda(
     labels: Path = typer.Option(
         Path("data/processed/amr_labels.csv"),

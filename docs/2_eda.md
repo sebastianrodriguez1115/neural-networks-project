@@ -30,8 +30,12 @@ El EDA responde preguntas clave antes de escribir código de preprocesamiento:
 ## Cómo correrlo
 
 ```bash
+# Análisis completo (CSV y genomas en rutas por defecto):
 uv run python main.py eda --genomes-dir data/raw/fasta_sample
-uv run python main.py eda --genomes-dir data/raw/fasta_sample --labels data/processed/amr_labels.csv --top-n 30
+# Ruta personalizada al CSV de etiquetas:
+uv run python main.py eda --genomes-dir data/raw/fasta_sample --labels data/processed/amr_labels.csv
+# Mostrar más antibióticos en el ranking (por defecto: 20):
+uv run python main.py eda --genomes-dir data/raw/fasta_sample --top-n 30
 ```
 
 El código está en `src/eda.py`. El comando `eda` en `main.py` es solo el punto de entrada CLI.
