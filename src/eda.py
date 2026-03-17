@@ -32,6 +32,43 @@ from bvbrc import ESKAPE_TAXON_IDS
 TAXON_ID_TO_SPECIES_NAME = {taxon_id: name for name, taxon_id in ESKAPE_TAXON_IDS.items()}
 
 
+def export_contradictions(labels_path: Path, output_path: Path) -> int:
+    """
+    Finds (genome_id, antibiotic) pairs with contradictory labels and exports them to CSV.
+
+    A contradictory pair is one where the same genome was tested against the same
+    antibiotic and produced both Resistant and Susceptible results in different records.
+
+    Args:
+        labels_path: Path to the AMR labels CSV.
+        output_path: Path where the contradictions CSV will be saved.
+
+    Returns:
+        Number of contradictory pairs found.
+    """
+    dataframe = pandas.read_csv(labels_path)
+
+    contradictory_pairs = (
+        dataframe.groupby(["genome_id", "antibiotic"])["resistant_phenotype"]
+        .nunique()
+        .gt(1)
+    )
+    contradictory_indices = contradictory_pairs[contradictory_pairs].index
+
+    result = (
+        dataframe.set_index(["genome_id", "antibiotic"])
+        .loc[contradictory_indices]
+        .reset_index()
+        .sort_values(["genome_id", "antibiotic"])
+    )
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(output_path, index=False)
+
+    return len(contradictory_indices)
+
+
 def run_eda(labels_path: Path, top_n: int = 20, genomes_dir: Path | None = None) -> None:
     """
     Carga el CSV de etiquetas AMR y ejecuta el análisis exploratorio completo.

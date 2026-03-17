@@ -1,33 +1,174 @@
 # EDA — Análisis Exploratorio de Datos
 
-## Data dictionary
-
-El CSV de etiquetas (`data/processed/amr_labels.csv`) contiene las siguientes columnas:
-
-| Columna | Tipo | Descripción | Valores / Rango | Nulos |
-|---|---|---|---|---|
-| `genome_id` | string | Identificador único del genoma en BV-BRC (formato: `taxon_id.número`) | ej. `1280.10000` | 0 |
-| `taxon_id` | int | ID taxonómico NCBI de la especie | Uno de los 6 ESKAPE (ver bvbrc_api.md) | 0 |
-| `antibiotic` | string | Nombre del antibiótico testeado (lowercase) | 96 valores únicos | 0 |
-| `resistant_phenotype` | string | Fenotipo AMR binario | `"Resistant"` o `"Susceptible"` | 0 |
-| `laboratory_typing_method` | string | Método de laboratorio usado | ej. `"MIC"`, `"disk diffusion"` | 14.4% |
-| `testing_standard` | string | Estándar de interpretación clínica aplicado | ej. `"CLSI"`, `"EUCAST"` | 16.8% |
-
-**Nota:** `laboratory_typing_method` y `testing_standard` son metadata del experimento de laboratorio. No se usan como features del modelo — solo `genome_id` y `antibiotic` son inputs; `resistant_phenotype` es el target.
+Este documento resume los hallazgos del análisis exploratorio sobre el dataset de etiquetas AMR (resistencia antimicrobiana) descargado de BV-BRC y una muestra de genomas FASTA. El objetivo es entender la estructura, calidad y distribuciones del dataset antes de implementar el pipeline de preprocesamiento.
 
 ---
 
-## Qué es el EDA
+## Panorama del dataset
 
-El **Exploratory Data Analysis (EDA)** es una etapa previa a la implementación del pipeline en la que se examina el dataset crudo para entender su estructura, calidad y distribuciones. En este proyecto, el EDA opera sobre el CSV de etiquetas AMR descargado de BV-BRC.
+El dataset contiene **162,170 registros** de pruebas de laboratorio que asocian genomas bacterianos con su respuesta a antibióticos. Cada registro es un triple `(genome_id, antibiotic, resistant_phenotype)`.
 
-El EDA responde preguntas clave antes de escribir código de preprocesamiento:
-- ¿Cuántos datos hay por especie y antibiótico?
-- ¿Qué tan balanceadas están las clases (Resistant / Susceptible)?
-- ¿Hay duplicados o valores nulos que deba manejar el pipeline?
-- ¿Cuántos antibióticos distintos hay? → determina la dimensión del embedding
+| Dimensión | Valor |
+|---|---|
+| Registros totales | 162,170 |
+| Genomas únicos | 16,204 |
+| Antibióticos distintos | 96 |
+| Especies ESKAPE presentes | 5 de 6 |
 
-## Cómo correrlo
+*Enterobacter spp.* (taxon_id=547) no aparece — posible problema con el nivel de agrupación por género en BV-BRC.
+
+### Columnas del CSV
+
+| Columna | Tipo | Descripción | Nulos |
+|---|---|---|---|
+| `genome_id` | string | Identificador del genoma en BV-BRC (ej. `1280.10000`) | 0 |
+| `taxon_id` | int | ID taxonómico NCBI de la especie | 0 |
+| `antibiotic` | string | Nombre del antibiótico testeado (lowercase) | 0 |
+| `resistant_phenotype` | string | `"Resistant"` o `"Susceptible"` | 0 |
+| `laboratory_typing_method` | string | Método de laboratorio (ej. MIC, disk diffusion) | 14.4% |
+| `testing_standard` | string | Estándar clínico aplicado (ej. CLSI, EUCAST) | 16.8% |
+
+Solo `genome_id` y `antibiotic` son inputs del modelo; `resistant_phenotype` es el target. Las demás columnas son metadata del experimento de laboratorio y no se usan como features.
+
+---
+
+## Distribución y balance
+
+### Por especie
+
+El desbalance entre especies es significativo y representa un confound potencial: un modelo podría aprender a predecir la especie en vez del genotipo de resistencia.
+
+| Especie | Registros | Genomas | R% | S% |
+|---|---|---|---|---|
+| *Klebsiella pneumoniae* | 66,140 | 5,750 | 63.6% | 36.4% |
+| *Staphylococcus aureus* | 41,458 | 4,437 | 27.6% | 72.4% |
+| *Acinetobacter baumannii* | 24,193 | 1,426 | 79.5% | 20.5% |
+| *Enterococcus faecium* | 22,318 | 3,214 | 47.8% | 52.2% |
+| *Pseudomonas aeruginosa* | 8,061 | 1,377 | 50.9% | 49.1% |
+
+*A. baumannii* tiene 80% Resistant mientras *S. aureus* tiene 72% Susceptible — extremos opuestos. Mitigación: no incluir `taxon_id` como feature; la especie queda implícita en los k-meros del genoma.
+
+### Balance global
+
+El balance global es razonable: **54% Resistant / 46% Susceptible**.
+
+`pos_weight = Susceptible / Resistant = 74,615 / 87,555 = 0.8522`
+
+Un valor menor a 1 indica que la clase positiva (Resistant) es mayoritaria, por lo que `BCEWithLogitsLoss` la penaliza levemente menos para evitar sesgar el modelo hacia predecir siempre Resistant.
+
+### Por antibiótico
+
+Los 5 antibióticos con más registros cubren una mezcla de perfiles:
+
+| Antibiótico | Registros | R% |
+|---|---|---|
+| gentamicin | 11,197 | 37% |
+| ciprofloxacin | 9,622 | 64% |
+| ampicillin | 7,818 | 92% |
+| tetracycline | 7,086 | 45% |
+| trimethoprim/sulfamethoxazole | 6,474 | 59% |
+
+**27 antibióticos** tienen desbalance extremo (R% ≥ 90 o R% ≤ 10). Algunos con muy pocos registros (ej. amoxicillin con 2, dicloxacillin con 1) no tendrán suficiente variabilidad para que el modelo aprenda.
+
+→ Dimensión de embedding del antibiótico: **49** `[min(50, (96 // 2) + 1)]`
+
+---
+
+## Calidad de datos
+
+### Valores nulos
+
+Los nulos están concentrados en `laboratory_typing_method` (14.4%) y `testing_standard` (16.8%). No afectan el pipeline porque estas columnas no se usan como features.
+
+### Duplicados
+
+**10,383 registros duplicados** (mismo `genome_id` + `antibiotic`). De estos, **488 pares tienen etiquetas contradictorias** (un registro dice Resistant y otro dice Susceptible para el mismo genoma y antibiótico). Esto puede indicar variación experimental o errores de medición.
+
+Estrategia propuesta: conservar el primer registro al eliminar duplicados en `data_pipeline.py`.
+
+### Genomas con cobertura extrema
+
+200 genomas (1.2% del total) tienen más de 32 registros (media: 10, umbral: mean+3σ). No son errores — son genomas testeados contra muchos antibióticos. No requieren tratamiento especial.
+
+---
+
+## Análisis genómico
+
+Se analizó una muestra de 138 genomas (30 por especie, estratificados por fenotipo). El objetivo es verificar que la materia prima para extraer k-meros sea de calidad suficiente.
+
+### Estadísticas por especie
+
+| Especie | N | Long. media (Mb) | Contigs med. | GC% med. |
+|---|---|---|---|---|
+| *Pseudomonas aeruginosa* | 27 | 6.69 | 160 | 66.0% |
+| *Klebsiella pneumoniae* | 26 | 5.55 | 118 | 57.2% |
+| *Acinetobacter baumannii* | 29 | 4.20 | 288 | 39.3% |
+| *Enterococcus faecium* | 29 | 2.86 | 563 | 38.2% |
+| *Staphylococcus aureus* | 27 | 2.78 | 53 | 32.7% |
+
+La variabilidad de GC entre especies (32.7%–66.0%) es una señal biológica real que los k-meros capturarán naturalmente.
+
+### Alertas
+
+- **2 genomas muy cortos** (<0.5 Mb): `1352.11605` (3.6 kb) y `1352.11302` (16.9 kb) — ensambles casi vacíos de *E. faecium*. Un genoma típico de esta especie tiene ~3 Mb; estos tienen menos del 1%. Producirían histogramas de k-meros casi vacíos y deben filtrarse en el pipeline.
+- **6 genomas muy fragmentados** (>500 contigs): principalmente *E. faecium*, consistente con la calidad típica de draft assemblies de esta especie. No requieren filtrado.
+- **Bases N**: prácticamente 0% en toda la muestra — buena calidad de secuenciación.
+
+### Implicaciones para el pipeline
+
+- Los ~16,000 genomas completos (~4.4 Mb promedio) requieren ~64 GB en disco.
+- Se necesita un filtro de longitud mínima (ej. 0.5 Mb) para descartar ensambles incompletos.
+- La fragmentación de *E. faecium* no requiere tratamiento especial — los k-meros operan sobre cada contig independientemente.
+
+---
+
+## Baseline benchmark
+
+El baseline establece el **piso mínimo** que los modelos deben superar sin usar información genómica.
+
+**Predicción naive** (siempre "Resistant"): accuracy 54.0%.
+
+**Predicción por antibiótico** (clase mayoritaria de cada antibiótico):
+
+| Métrica | Valor |
+|---|---|
+| Accuracy | 71.2% |
+| Precision (Resistant) | 0.7281 |
+| Recall (Resistant) | 0.7453 |
+| **F1 (Resistant)** | **0.7366** |
+
+Este baseline captura la señal epidemiológica del antibiótico (ej. ampicillin → casi siempre Resistant) sin usar ninguna información genómica. Los modelos deben superar **F1 ≥ 0.85** para demostrar que los k-meros aportan valor predictivo.
+
+---
+
+## Leakage y confounds
+
+### Leakage
+
+No se identificó leakage. Las features (k-meros del FASTA) y el target (`resistant_phenotype` del CSV) provienen de fuentes independientes. Las columnas `laboratory_typing_method` y `testing_standard` describen el mismo experimento que produjo el target — por eso se descartan.
+
+### Confounds identificados
+
+| Confound | Riesgo | Mitigación |
+|---|---|---|
+| Desbalance por especie | El modelo aprende la especie en vez del genotipo | No incluir `taxon_id` como feature; split por `genome_id` |
+| Desbalance por antibiótico | 27 antibióticos con R% ≥ 90 o ≤ 10 | Considerar en el análisis de resultados |
+| Etiquetas contradictorias | 488 pares con fenotipos distintos | Conservar primer registro al deduplicar |
+
+---
+
+## Decisiones derivadas
+
+- [x] **Dimensión de embedding del antibiótico: 49** → `min(50, (96 // 2) + 1)`
+- [ ] **Duplicados**: conservar primer registro (pendiente confirmar en `data_pipeline.py`)
+- [ ] **Enterobacter ausente**: investigar si taxon_id=547 captura los datos en BV-BRC
+- [ ] **Filtro de longitud mínima**: descartar genomas < 0.5 Mb en el pipeline
+
+---
+
+## Apéndice: cómo correr el EDA
+
+El código está en `src/eda.py`. El comando `eda` en `main.py` es el punto de entrada CLI.
 
 ```bash
 # Análisis completo (CSV y genomas en rutas por defecto):
@@ -37,181 +178,3 @@ uv run python main.py eda --genomes-dir data/raw/fasta_sample --labels data/proc
 # Mostrar más antibióticos en el ranking (por defecto: 20):
 uv run python main.py eda --genomes-dir data/raw/fasta_sample --top-n 30
 ```
-
-El código está en `src/eda.py`. El comando `eda` en `main.py` es solo el punto de entrada CLI.
-
-## Secciones del reporte
-
-| Sección | Qué muestra | Por qué es importante |
-|---|---|---|
-| Resumen general | Total registros, genome IDs únicos, antibióticos, especies, dimensión (dim) de embedding sugerida | Da el scope del dataset y determina hiperparámetros (dimensión de embedding) |
-| Registros por especie | Registros, genomas únicos, % Resistant / Susceptible por especie | Revela desbalance por especie que puede confundir al modelo |
-| Balance de clases global | Conteo R/S y `pos_weight` (positive weight) sugerido para `BCEWithLogitsLoss` | Determina el `pos_weight` necesario para la función de pérdida |
-| Top N antibióticos | Ranking por número de registros con balance R/S de cada uno | Identifica antibióticos con poca evidencia o desbalance severo |
-| Calidad de datos | Valores nulos por columna y registros duplicados (genome_id + antibiotic) | Define qué limpiar en el pipeline antes de entrenar |
-| Outliers | Genomas con registros extremos, antibióticos muy desbalanceados, etiquetas contradictorias | Detecta anomalías que pueden distorsionar el entrenamiento |
-| Baseline benchmark | Majority class global y por antibiótico (accuracy, precision, recall, F1-score) | Establece el piso mínimo que los modelos deben superar para ser útiles |
-| Análisis genómico | Longitud, contigs, GC content y alertas de calidad | Verifica que las secuencias de entrada sean de calidad suficiente para extraer k-meros |
-
-## Hallazgos del EDA inicial (2026-03-03)
-
-Dataset: ESKAPE completo, evidencia de laboratorio, fenotipos binarios.
-
-### Resumen general
-- **162,170 registros** · 16,204 genomas únicos · **96 antibióticos** · 5 especies
-- *Enterobacter spp.* (taxon_id=547) no aparece en el dataset — posible problema con el nivel de agrupación por género
-
-### Registros por especie
-- Desbalance importante por especie:
-
-| Especie | taxon_id | R% | S% |
-|---|---|---|---|
-| *Enterococcus faecium* | 1352 | 47.8% | 52.2% |
-| *Staphylococcus aureus* | 1280 | 27.6% | 72.4% |
-| *Klebsiella pneumoniae* | 573 | 63.6% | 36.4% |
-| *Acinetobacter baumannii* | 470 | 79.5% | 20.5% |
-| *Pseudomonas aeruginosa* | 287 | 50.9% | 49.1% |
-| *Enterobacter spp.* | 547 | — | — |
-
-### Balance de clases global
-- Global: **54% Resistant / 46% Susceptible** (relativamente balanceado)
-- **`pos_weight` (positive weight) = 0.8522**
-
-`pos_weight` es un factor que ajusta cuánto penaliza la función de pérdida los errores en la clase positiva (Resistant). Se calcula como `negativos / positivos` (convención de PyTorch para `BCEWithLogitsLoss`):
-
-`pos_weight = Susceptible / Resistant = 74,615 / 87,555 = 0.8522`
-
-Un valor menor a 1 indica que la clase positiva es mayoritaria, por lo que se penaliza levemente menos para evitar que el modelo se sesgue hacia predecir siempre Resistant.
-
-### Top N antibióticos
-| Antibiótico | Registros | R% |
-|---|---|---|
-| gentamicin | 11,197 | 37% |
-| ciprofloxacin | 9,622 | 64% |
-| ampicillin | 7,818 | 92% |
-| tetracycline | 7,086 | 45% |
-| trimethoprim/sulfamethoxazole | 6,474 | 59% |
-
-### Calidad de datos
-- `laboratory_typing_method`: 23,321 nulos (14.4%) — esperado, filtro es por `evidence=Laboratory`
-- `testing_standard`: 27,211 nulos (16.8%)
-- **10,383 duplicados** (mismo genome_id + antibiotic) → a resolver en `data_pipeline.py`
-
-## Análisis genómico (muestra de 89 genomas)
-
-Muestra de 89 genomas descargados (20 por especie estratificados por fenotipo, 11 fallaron en BV-BRC).
-
-### Estadísticas globales
-
-| Métrica | Media | Std (desviación estándar) | Min | Max |
-|---|---|---|---|---|
-| Longitud total (Mb, megabases) | 4.44 | 1.61 | 2.67 | 8.60 |
-| Número de contigs (fragmentos ensamblados continuos del genoma) | 296 | 880 | 9 | 5,776 |
-| Contenido GC (guanina-citosina, %) | 46.17 | 12.69 | 32.64 | 66.43 |
-| Bases N (%) | 0.00 | 0.01 | 0.00 | 0.04 |
-
-### Por especie
-
-| Especie | N | Long. media (Mb) | Contigs med. | GC% med. |
-|---|---|---|---|---|
-| *Acinetobacter baumannii* | 19 | 4.32 | 392 | 39.4% |
-| *Enterococcus faecium* | 19 | 3.14 | 739 | 38.5% |
-| *Klebsiella pneumoniae* | 16 | 5.56 | 138 | 57.2% |
-| *Pseudomonas aeruginosa* | 17 | 6.73 | 100 | 66.1% |
-| *Staphylococcus aureus* | 18 | 2.77 | 55 | 32.7% |
-
-### Alertas y observaciones
-
-- **Genomas cortos (<0.5 Mb):** 0 — no hay secuencias incompletas preocupantes
-- **Genomas muy fragmentados (>500 contigs):** 4 — principalmente *Enterococcus faecium* (media 739 contigs); es un draft assembly típico de esta especie
-- **Bases N (%):** prácticamente 0 en toda la muestra — buena calidad de secuenciación
-- **GC content:** alta variabilidad entre especies (32.7% en *S. aureus* vs 66.1% en *P. aeruginosa*); los k-meros capturarán esta variación naturalmente
-
-### Implicaciones para el pipeline
-
-- Los 16,204 genomas completos (~4.4 Mb en promedio) requieren espacio significativo en disco (~64 GB total estimado)
-- La alta fragmentación de *E. faecium* puede afectar la distribución de k-meros; es una variación esperada y no requiere tratamiento especial
-- No se identifican problemas de calidad que requieran filtrado adicional
-
----
-
-## Análisis de leakage y confounds
-
-**Leakage** (fuga de información) ocurre cuando el modelo tiene acceso durante el entrenamiento a información que no debería tener, haciendo que parezca mejor de lo que realmente es.
-
-**Confounds** (variables de confusión) son variables correlacionadas tanto con los features como con el target, que pueden hacer que el modelo aprenda una correlación espuria en lugar de la relación real.
-
-### Features del modelo
-El modelo recibe exclusivamente:
-- **Input genómico**: frecuencias de k-meros extraídas del FASTA del genoma (no del CSV)
-- **Input antibiótico**: embedding aprendido del nombre del antibiótico
-
-El CSV de etiquetas **no se usa como fuente de features**. Solo provee el target (`resistant_phenotype`) y las claves para cruzar con los FASTA (`genome_id`, `antibiotic`).
-
-### Leakage
-No se identificó leakage. Las features (k-meros extraídos de los FASTA) y el target (`resistant_phenotype` del CSV) provienen de fuentes completamente separadas. Las columnas `laboratory_typing_method` y `testing_standard` podrían constituir leakage si se usaran como features, ya que describen el mismo experimento que produjo el target — por eso se descartan.
-
-### Columnas descartadas
-| Columna | Razón |
-|---|---|
-| `laboratory_typing_method` | Metadata del experimento de laboratorio, no del genoma; 14.4% nulos |
-| `testing_standard` | Mismo razonamiento; 16.8% nulos |
-| `taxon_id` | Redundante con `genome_id`; la especie ya está implícita en el genoma |
-
-### Confounds identificados
-- **Desbalance por especie**: *Acinetobacter baumannii* tiene 79.5% Resistant. Un modelo podría "hacer trampa" aprendiendo la especie en lugar del genotipo. Mitigación: no incluir taxon_id como feature; estratificar el split por `genome_id`.
-- **Desbalance por antibiótico**: 27 antibióticos con R%≥90 o R%≤10 (ver sección Outliers). Para antibióticos con muy pocos registros (<10), el modelo tendrá poca evidencia.
-- **Etiquetas contradictorias**: 488 pares (genome_id, antibiotic) con fenotipos distintos en registros diferentes. Pueden indicar errores de medición o variación experimental. Se resuelven conservando el primer registro (ver Decisiones derivadas).
-
----
-
-## Outliers
-
-### Genomas con registros extremos
-- Media: **10.0 registros/genoma**, std: 7.3, umbral (mean+3σ): **31.9**
-- **200 genomas** superan el umbral (de 16,204 total — 1.2%)
-- Ejemplo: genoma `1280.1593` tiene 49 registros
-- Interpretación: estos genomas fueron testeados contra muchos más antibióticos que el promedio. No son errores — son genomas con cobertura experimental mayor.
-
-### Antibióticos con desbalance extremo (R%≥90 o R%≤10)
-**27 antibióticos** con desbalance extremo. Los más notables:
-
-| Antibiótico | Registros | R% | Nota |
-|---|---|---|---|
-| linezolid | 3,600 | 4.3% | Casi todo Susceptible |
-| ampicillin | 7,818 | 91.5% | Casi todo Resistant |
-| ceftriaxone | 4,092 | 88.0% | Alto R% |
-| aztreonam | 3,764 | 84.0% | Alto R% |
-| amoxicillin | 2 | 100.0% | Solo 2 registros |
-
-Los antibióticos con muy pocos registros (n<10) y 100% de una clase probablemente no tendrán suficiente variabilidad para aprender. Se considerarán en el análisis de resultados.
-
-### Etiquetas contradictorias
-**488 pares** (genome_id, antibiotic) con fenotipos distintos en registros duplicados (de 10,383 duplicados totales — 4.7%). Estrategia: conservar el primer registro al eliminar duplicados.
-
----
-
-## Baseline benchmark
-
-Establece el **piso mínimo** que deben superar los modelos sin usar información genómica.
-
-### Majority class global
-Predecir siempre "Resistant" (clase mayoritaria):
-- **Accuracy: 54.0%**
-
-### Majority class por antibiótico
-Para cada registro, predecir la clase mayoritaria de su antibiótico:
-- **Accuracy: 71.2%**
-- **Precision (Resistant): 0.7281**
-- **Recall (Resistant): 0.7453**
-- **F1 (Resistant): 0.7366**
-
-Este baseline captura la señal epidemiológica del antibiótico (ej. ampicillin → casi siempre Resistant) sin usar ninguna información genómica. Los modelos deben superar **F1 ≥ 0.85** sobre este piso.
-
----
-
-## Decisiones derivadas del EDA
-
-- [x] **Dimensión (dim) de embedding del antibiótico: 49** → `min(50, (96 // 2) + 1)`
-- [ ] **Duplicados**: decidir estrategia en `data_pipeline.py` (conservar el primero, promediar, o eliminar)
-- [ ] **Enterobacter ausente**: investigar si taxon_id=547 captura los datos o si hay que usar IDs de especie

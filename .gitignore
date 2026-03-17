@@ -1,4 +1,11 @@
 .idea/
 **/*.fna
 **/amr_labels.csv
+**/contradictory_labels.csv
+**/cleaned_labels.csv
+**/antibiotic_index.csv
+**/splits.csv
+**/*.npy
 *.egg-info/
+**/__pycache__/
+

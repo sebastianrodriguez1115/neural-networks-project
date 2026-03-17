@@ -4,9 +4,11 @@ main.py
 Punto de entrada CLI del proyecto de predicción de AMR.
 
 Comandos:
-    download-amr      Descarga etiquetas AMR de BV-BRC para organismos ESKAPE
-    download-genomes  Descarga genomas FASTA para los genome_id del CSV de etiquetas
-    eda               Análisis exploratorio del dataset de etiquetas AMR
+    download-amr              Descarga etiquetas AMR de BV-BRC para organismos ESKAPE
+    download-genomes          Descarga genomas FASTA para los genome_id del CSV de etiquetas
+    eda                       Análisis exploratorio del dataset de etiquetas AMR
+    export-contradictions-cmd Exporta pares con etiquetas contradictorias a CSV
+    prepare-data              Preprocesa datos: limpia, extrae k-meros, split, normaliza
 
 Uso:
     uv run python main.py --help
@@ -21,7 +23,8 @@ import pandas
 import typer
 
 from bvbrc import download_multiple_genomes_fasta, fetch_amr_labels
-from eda import run_eda
+from data_pipeline import run_pipeline
+from eda import export_contradictions, run_eda
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -144,6 +147,69 @@ def eda(
         raise typer.Exit(code=1)
 
     run_eda(labels_path=labels, top_n=top_n, genomes_dir=genomes_dir)
+
+
+@app.command(help="Exporta los pares (genome_id, antibiotic) con etiquetas contradictorias (Resistant y Susceptible en registros distintos) a un CSV para inspección.")
+def export_contradictions_cmd(
+    labels: Path = typer.Option(
+        Path("data/processed/amr_labels.csv"),
+        help="Ruta al CSV de etiquetas AMR.",
+    ),
+    output: Path = typer.Option(
+        Path("data/processed/contradictory_labels.csv"),
+        help="Ruta donde guardar el CSV de pares contradictorios.",
+    ),
+):
+    """
+    Exporta pares (genome_id, antibiotic) con etiquetas contradictorias a CSV.
+
+    Un par es contradictorio cuando el mismo genoma fue testeado contra el mismo
+    antibiótico y produjo resultados Resistant y Susceptible en registros distintos.
+    """
+    if not labels.exists():
+        typer.echo(f"Error: no se encontró el archivo de etiquetas: {labels}", err=True)
+        raise typer.Exit(code=1)
+
+    n_pairs = export_contradictions(labels_path=labels, output_path=output)
+    typer.echo(f"Pares contradictorios encontrados: {n_pairs}")
+    typer.echo(f"Reporte guardado en: {output}")
+
+
+@app.command(help="Pre-procesa los datos: limpia etiquetas, extrae k-meros, divide en train/val/test y normaliza features.")
+def prepare_data(
+    labels: Path = typer.Option(
+        Path("data/processed/amr_labels.csv"),
+        help="Ruta al CSV de etiquetas AMR.",
+    ),
+    fasta_dir: Path = typer.Option(
+        Path("data/raw/fasta"),
+        help="Directorio con archivos .fna de genomas.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio donde guardar los outputs del pipeline.",
+    ),
+):
+    """
+    Ejecuta el pipeline completo de preprocesamiento:
+
+    1. Elimina pares contradictorios y duplicados del CSV de etiquetas
+    2. Filtra genomas por calidad (longitud mínima 0.5 Mb)
+    3. Crea índice antibiótico → entero
+    4. Divide genome_ids en train/val/test (70/15/15, estratificado)
+    5. Extrae histogramas de k-meros (k=3,4,5) por genoma
+    6. Normaliza con estadísticas del train set
+    7. Guarda features (.npy), etiquetas limpias, splits e índice
+    """
+    if not labels.exists():
+        typer.echo(f"Error: no se encontró el archivo de etiquetas: {labels}", err=True)
+        raise typer.Exit(code=1)
+    if not fasta_dir.is_dir():
+        typer.echo(f"Error: no se encontró el directorio de genomas: {fasta_dir}", err=True)
+        raise typer.Exit(code=1)
+
+    run_pipeline(labels_path=labels, fasta_dir=fasta_dir, output_dir=output_dir)
+    typer.echo("Pipeline completado.")
 
 
 if __name__ == "__main__":

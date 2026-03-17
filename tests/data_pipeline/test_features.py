@@ -1,0 +1,207 @@
+"""
+test_features.py
+
+Tests for data_pipeline/features.py:
+    - KmerExtractor: vector dimensions, kmer counting
+    - build_antibiotic_index: sorted mapping
+    - normalize_features: uses train-set stats, not full-set stats
+    - mlp_vector_to_bigru_matrix: output shape
+    - split_genomes: ratios, all genomes assigned, stratification
+"""
+
+import numpy
+import pandas
+import pytest
+
+from data_pipeline.features import (
+    KmerExtractor,
+    build_antibiotic_index,
+    mlp_vector_to_bigru_matrix,
+    normalize_features,
+    split_genomes,
+)
+from data_pipeline.constants import TOTAL_KMER_DIM, BIGRU_PAD_DIM
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+def _write_fasta(path, sequence="ACGT" * 10):
+    path.write_text(f">contig1\n{sequence}\n")
+
+
+def _make_labels(n_resistant: int = 10, n_susceptible: int = 10) -> pandas.DataFrame:
+    """Creates a balanced label DataFrame with one antibiotic per genome."""
+    rows = (
+        [(f"r{i}", "amikacin", "Resistant") for i in range(n_resistant)]
+        + [(f"s{i}", "amikacin", "Susceptible") for i in range(n_susceptible)]
+    )
+    return pandas.DataFrame(rows, columns=["genome_id", "antibiotic", "resistant_phenotype"])
+
+
+# ── KmerExtractor ──────────────────────────────────────────────────────────────
+
+
+def test_kmer_extractor_mlp_vector_dimension(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 100)
+
+    extractor = KmerExtractor(fasta)
+    extractor.extract()
+
+    assert extractor.to_mlp_vector().shape == (TOTAL_KMER_DIM,)
+
+
+def test_kmer_extractor_bigru_matrix_shape(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 100)
+
+    extractor = KmerExtractor(fasta)
+    extractor.extract()
+    vec = extractor.to_mlp_vector()
+    matrix = mlp_vector_to_bigru_matrix(vec)
+
+    assert matrix.shape == (BIGRU_PAD_DIM, 3)
+
+
+def test_kmer_extractor_counts_are_non_negative(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGTACGT")
+
+    extractor = KmerExtractor(fasta)
+    extractor.extract()
+
+    assert (extractor.to_mlp_vector() >= 0).all()
+
+
+def test_kmer_extractor_identical_sequences_give_identical_vectors(tmp_path):
+    fasta1 = tmp_path / "g1.fna"
+    fasta2 = tmp_path / "g2.fna"
+    seq = "ACGTACGTACGT" * 50
+    _write_fasta(fasta1, seq)
+    _write_fasta(fasta2, seq)
+
+    e1 = KmerExtractor(fasta1)
+    e1.extract()
+    e2 = KmerExtractor(fasta2)
+    e2.extract()
+
+    numpy.testing.assert_array_equal(e1.to_mlp_vector(), e2.to_mlp_vector())
+
+
+# ── build_antibiotic_index ─────────────────────────────────────────────────────
+
+
+def test_build_antibiotic_index_sorted_alphabetically():
+    series = pandas.Series(["penicillin", "amikacin", "ampicillin"])
+    result = build_antibiotic_index(series)
+
+    assert list(result["antibiotic"]) == ["amikacin", "ampicillin", "penicillin"]
+
+
+def test_build_antibiotic_index_zero_based_integers():
+    series = pandas.Series(["b", "a", "c"])
+    result = build_antibiotic_index(series)
+
+    assert list(result["index"]) == [0, 1, 2]
+
+
+def test_build_antibiotic_index_deduplicates():
+    series = pandas.Series(["amikacin", "amikacin", "penicillin"])
+    result = build_antibiotic_index(series)
+
+    assert len(result) == 2
+
+
+# ── normalize_features ─────────────────────────────────────────────────────────
+
+
+def test_normalize_features_uses_train_mean_not_full_mean():
+    vectors = {
+        "g1": numpy.array([1.0, 2.0]),
+        "g2": numpy.array([3.0, 4.0]),
+        "g3": numpy.array([100.0, 200.0]),  # test-only outlier
+    }
+    train_ids = {"g1", "g2"}
+
+    _, mean, _ = normalize_features(vectors, train_ids)
+
+    assert mean[0] == pytest.approx(2.0)   # (1 + 3) / 2
+
+
+def test_normalize_features_returns_dict_with_all_genome_ids():
+    vectors = {"g1": numpy.array([1.0]), "g2": numpy.array([2.0])}
+    train_ids = {"g1"}
+
+    normalized, _, _ = normalize_features(vectors, train_ids)
+
+    assert set(normalized.keys()) == {"g1", "g2"}
+
+
+def test_normalize_features_zero_std_columns_become_one():
+    vectors = {
+        "g1": numpy.array([5.0, 1.0]),
+        "g2": numpy.array([5.0, 3.0]),
+    }
+    train_ids = {"g1", "g2"}
+
+    _, _, std = normalize_features(vectors, train_ids)
+
+    assert std[0] == pytest.approx(1.0)  # zero std replaced with 1.0
+
+
+# ── mlp_vector_to_bigru_matrix ─────────────────────────────────────────────────
+
+
+def test_mlp_vector_to_bigru_matrix_shape():
+    vec = numpy.zeros(TOTAL_KMER_DIM)
+    matrix = mlp_vector_to_bigru_matrix(vec)
+
+    assert matrix.shape == (BIGRU_PAD_DIM, 3)
+
+
+def test_mlp_vector_to_bigru_matrix_padded_positions_are_zero():
+    vec = numpy.ones(TOTAL_KMER_DIM)
+    matrix = mlp_vector_to_bigru_matrix(vec)
+
+    # k=3 histogram: 64 dims padded to 1024 — positions 64..1023 in col 0 must be 0
+    assert matrix[64, 0] == pytest.approx(0.0)
+    # k=4 histogram: 256 dims padded to 1024 — positions 256..1023 in col 1 must be 0
+    assert matrix[256, 1] == pytest.approx(0.0)
+    # k=5 histogram: 1024 dims exactly — no padding in col 2
+    assert matrix[1023, 2] == pytest.approx(1.0)
+
+
+# ── split_genomes ──────────────────────────────────────────────────────────────
+
+
+def test_split_genomes_assigns_all_genomes():
+    labels = _make_labels(n_resistant=10, n_susceptible=10)
+    splits = split_genomes(labels)
+
+    all_genome_ids = set(labels["genome_id"].unique())
+    split_genome_ids = set(splits["genome_id"])
+    assert split_genome_ids == all_genome_ids
+
+
+def test_split_genomes_approximate_train_ratio():
+    labels = _make_labels(n_resistant=10, n_susceptible=10)
+    splits = split_genomes(labels)
+
+    total = len(splits)
+    train_count = (splits["split"] == "train").sum()
+    assert train_count / total == pytest.approx(0.70, abs=0.10)
+
+
+def test_split_genomes_has_train_val_test():
+    labels = _make_labels(n_resistant=10, n_susceptible=10)
+    splits = split_genomes(labels)
+
+    assert set(splits["split"].unique()) == {"train", "val", "test"}
+
+
+def test_split_genomes_no_genome_in_multiple_splits():
+    labels = _make_labels(n_resistant=10, n_susceptible=10)
+    splits = split_genomes(labels)
+
+    assert splits["genome_id"].nunique() == len(splits)
