@@ -27,9 +27,7 @@ def _clean_labels(labels_path: Path, output_dir: Path) -> pandas.DataFrame:
     return cleaned
 
 
-def _filter_genomes(
-    cleaned: pandas.DataFrame, fasta_dir: Path
-) -> pandas.DataFrame:
+def _filter_genomes(cleaned: pandas.DataFrame, fasta_dir: Path) -> pandas.DataFrame:
     logger.info("Step 2: Genomic quality filter")
     all_genome_ids = cleaned["genome_id"].unique().tolist()
     valid_genomes = GenomeFilter(fasta_dir).filter(all_genome_ids)
@@ -54,7 +52,7 @@ def _save_antibiotic_index(
     )
 
 
-def _split_and_log(
+def _split_genomes(
     cleaned: pandas.DataFrame, output_dir: Path
 ) -> tuple[pandas.DataFrame, set[str]]:
     logger.info("Step 3: Train/val/test split")
@@ -75,16 +73,12 @@ def _split_and_log(
     return splits, train_ids
 
 
-def _extract_kmers(
-    genome_ids: list[str], fasta_dir: Path
-) -> dict[str, numpy.ndarray]:
+def _extract_kmers(genome_ids: list[str], fasta_dir: Path) -> dict[str, numpy.ndarray]:
     logger.info("Step 4: K-mer extraction")
     mlp_vectors: dict[str, numpy.ndarray] = {}
     for i, genome_id in enumerate(genome_ids):
         fasta_path = fasta_dir / f"{genome_id}.fna"
-        logger.info(
-            f"[{i + 1}/{len(genome_ids)}] Extracting k-mers: {genome_id}"
-        )
+        logger.info(f"[{i + 1}/{len(genome_ids)}] Extracting k-mers: {genome_id}")
         extractor = KmerExtractor(fasta_path)
         extractor.extract()
         mlp_vectors[genome_id] = extractor.to_mlp_vector()
@@ -98,9 +92,7 @@ def _normalize_and_save(
     output_dir: Path,
 ) -> None:
     logger.info("Step 5: Normalization (train set stats)")
-    mlp_normalized, mlp_mean, mlp_std = normalize_features(
-        mlp_vectors, train_ids
-    )
+    mlp_normalized, mlp_mean, mlp_std = normalize_features(mlp_vectors, train_ids)
 
     logger.info("Step 6: Saving features")
     mlp_dir = output_dir / "mlp"
@@ -111,10 +103,7 @@ def _normalize_and_save(
     for genome_id in genome_ids:
         mlp_vec = mlp_normalized[genome_id]
         numpy.save(mlp_dir / f"{genome_id}.npy", mlp_vec)
-        numpy.save(
-            bigru_dir / f"{genome_id}.npy",
-            mlp_vector_to_bigru_matrix(mlp_vec),
-        )
+        numpy.save(bigru_dir / f"{genome_id}.npy", mlp_vector_to_bigru_matrix(mlp_vec))
 
     numpy.save(output_dir / "mlp_mean.npy", mlp_mean)
     numpy.save(output_dir / "mlp_std.npy", mlp_std)
@@ -135,7 +124,7 @@ def run_pipeline(
     cleaned = _clean_labels(labels_path, output_dir)
     cleaned = _filter_genomes(cleaned, fasta_dir)
     _save_antibiotic_index(cleaned, output_dir)
-    _, train_ids = _split_and_log(cleaned, output_dir)
+    _, train_ids = _split_genomes(cleaned, output_dir)
     genome_list = sorted(cleaned["genome_id"].unique())
     mlp_vectors = _extract_kmers(genome_list, fasta_dir)
     _normalize_and_save(mlp_vectors, train_ids, genome_list, output_dir)

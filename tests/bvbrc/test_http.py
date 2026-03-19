@@ -68,7 +68,8 @@ def test_passes_url_and_headers_to_requests_get():
     mock_get.assert_called_once_with(test_url, headers=test_headers, timeout=120)
 
 
-def test_retries_on_transient_error_and_succeeds():
+@patch("bvbrc._http.time.sleep")
+def test_retries_on_transient_error_and_succeeds(_mock_sleep):
     mock_response = MagicMock()
     mock_response.raise_for_status.return_value = None
 
@@ -85,7 +86,8 @@ def test_retries_on_transient_error_and_succeeds():
     assert mock_get.call_count == 3
 
 
-def test_raises_runtime_error_when_all_retries_fail():
+@patch("bvbrc._http.time.sleep")
+def test_raises_runtime_error_when_all_retries_fail(_mock_sleep):
     with patch("bvbrc._http.requests.get") as mock_get:
         mock_get.side_effect = requests.exceptions.ConnectionError("timeout")
 
@@ -95,7 +97,8 @@ def test_raises_runtime_error_when_all_retries_fail():
     assert mock_get.call_count == MAX_RETRIES
 
 
-def test_original_exception_is_chained_in_runtime_error():
+@patch("bvbrc._http.time.sleep")
+def test_original_exception_is_chained_in_runtime_error(_mock_sleep):
     original_error = requests.exceptions.ConnectionError("timeout")
 
     with patch("bvbrc._http.requests.get", side_effect=original_error):

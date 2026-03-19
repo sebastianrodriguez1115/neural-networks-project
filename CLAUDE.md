@@ -30,7 +30,8 @@ Clasificación binaria (Resistant / Susceptible) sobre organismos ESKAPE. El ant
 - `docs/5_experiments.md` — experimentos y criterio de éxito
 
 ## Convenciones
-- **Código en inglés** — esto incluye nombres de funciones, variables, clases, comentarios en código y tests
+- **Código en inglés** — nombres de funciones, variables, clases y tests
+- **Docstrings y comentarios en español** — para que sean accesibles
 - Prose y documentación (docs/, CHANGELOG.md, README.md) en español
 - No implementar BiRNN Variante B (secuencia ordenada) a menos que se solicite explícitamente
 - Semilla aleatoria fija: `random_seed = 42`

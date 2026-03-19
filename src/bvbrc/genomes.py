@@ -106,7 +106,7 @@ class GenomeBatchFetcher:
         try:
             path = GenomeFetcher(genome_id, self._output_directory).fetch()
             self._successful[genome_id] = path
-        except Exception as exception:
+        except (RuntimeError, OSError) as exception:
             logger.error(f"Error descargando genoma {genome_id}: {exception}")
             self._failed.append(genome_id)
 
@@ -135,3 +135,4 @@ def download_multiple_genomes_fasta(
 ) -> dict[str, Path]:
     """Descarga FASTA de una lista de genomas. Ver GenomeBatchFetcher.fetch para detalles."""
     return GenomeBatchFetcher(genome_ids, output_directory).fetch()
+

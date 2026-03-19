@@ -91,6 +91,28 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 
 ## Changelog
 
+### 2026-03-18
+
+#### Code review y bugfixes
+- Code review completo del proyecto contra PEP 8 y CLAUDE.md (26 issues encontrados)
+- **Bugs corregidos:**
+  - `eda.py`: eliminado `import numpy` redundante en `_print_baseline_benchmark`
+  - `eda.py`: `genome_id` se comparaba como `float` en análisis genómico — corregido a comparación como `str`
+  - `eda.py` y `main.py`: agregado `dtype={"genome_id": str}` a todos los `read_csv` (consistencia con `cleaning.py`)
+  - `genomes.py`: `except Exception` reducido a `except (RuntimeError, OSError)` para no ocultar bugs
+- **Mejoras de robustez:**
+  - `features.py`: `zip(strict=True)` en `KmerExtractor.extract()`
+  - `features.py`: guard en `to_mlp_vector()` si `extract()` no fue llamado
+  - `cleaning.py`: documentado que `GenomeFilter.filter()` es single-use
+  - `main.py`: variable `taxon_id` no usada reemplazada por `_`
+- **Tests:** mock de `time.sleep` en tests de retries HTTP (~10s → instantáneo)
+- **Docstrings con referencias bibliográficas:**
+  - `normalize_features()` → Haykin (2009) §4.6 + LeCun et al. (1998) §4.3
+  - `split_genomes()` → Haykin (2009) §4.13
+- **Convención de idioma actualizada:** docstrings y comentarios ahora en español
+- Renombrado `_split_and_log` → `_split_genomes` en `pipeline.py`
+- 63 tests pasando
+
 ### 2026-03-17
 
 #### Refactor `src/data_pipeline.py` → paquete `src/data_pipeline/`

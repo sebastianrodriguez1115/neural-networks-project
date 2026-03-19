@@ -28,7 +28,7 @@ class KmerExtractor:
 
     def extract(self) -> dict[int, numpy.ndarray]:
         sequences = self._read_sequences()
-        for k, dim in zip(KMER_SIZES, KMER_DIMS):
+        for k, dim in zip(KMER_SIZES, KMER_DIMS, strict=True):
             histogram = numpy.zeros(dim, dtype=numpy.float64)
             for sequence in sequences:
                 self._count_kmers(sequence, k, histogram)
@@ -37,6 +37,8 @@ class KmerExtractor:
 
     def to_mlp_vector(self) -> numpy.ndarray:
         """Concatenate histograms (k=3,4,5) into a 1344-dim vector."""
+        if not self._histograms:
+            raise RuntimeError("Call extract() before to_mlp_vector()")
         return numpy.concatenate([self._histograms[k] for k in KMER_SIZES])
 
     def _read_sequences(self) -> list[str]:
@@ -86,7 +88,9 @@ def split_genomes(
     """Stratified train/val/test split by genome_id.
 
     Stratifies on the majority phenotype per genome to preserve
-    class distribution across splits.
+    class distribution across splits. The partition into estimation
+    (train) and validation subsets follows the cross-validation
+    framework described in Haykin (2009), Section 4.13.
     """
     genome_phenotype = (
         labels.groupby("genome_id")["resistant_phenotype"]
@@ -131,7 +135,13 @@ def normalize_features(
     vectors: dict[str, numpy.ndarray],
     train_ids: set[str],
 ) -> tuple[dict[str, numpy.ndarray], numpy.ndarray, numpy.ndarray]:
-    """Normalize using train-set mean and std. Returns (normalized, mean, std)."""
+    """Z-score normalize using train-set mean and std. Returns (normalized, mean, std).
+
+    Each feature is transformed as x' = (x - mean) / std, yielding zero mean
+    and unit variance (LeCun et al., 1998, Section 4.3). Statistics are computed
+    on the train set only to avoid data leakage (Haykin, 2009, Section 4.6,
+    Heuristic 5).
+    """
     train_matrix = numpy.stack([vectors[gid] for gid in sorted(train_ids)])
     mean = train_matrix.mean(axis=0)
     std = train_matrix.std(axis=0)

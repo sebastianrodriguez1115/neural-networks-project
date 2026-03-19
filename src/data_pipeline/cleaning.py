@@ -63,7 +63,10 @@ class LabelCleaner:
 
 
 class GenomeFilter:
-    """Filters genomes by FASTA availability and minimum sequence length."""
+    """Filters genomes by FASTA availability and minimum sequence length.
+
+    Note: filter() accumulates state and should only be called once per instance.
+    """
 
     def __init__(self, fasta_dir: Path, min_length: int = MIN_GENOME_LENGTH):
         self._fasta_dir = Path(fasta_dir)
@@ -97,3 +100,4 @@ class GenomeFilter:
     @staticmethod
     def _compute_length(fasta_path: Path) -> int:
         return sum(len(record.seq) for record in SeqIO.parse(fasta_path, "fasta"))
+

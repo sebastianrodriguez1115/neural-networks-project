@@ -40,7 +40,7 @@ def _sample_genome_ids(amr_labels: pandas.DataFrame, n_per_species: int) -> list
     amr_dedup = amr_labels.drop_duplicates(subset=["genome_id", "antibiotic"])
     sample_ids = []
 
-    for taxon_id, group in amr_dedup.groupby("taxon_id"):
+    for _, group in amr_dedup.groupby("taxon_id"):
         genome_phenotype = (
             group.groupby("genome_id")["resistant_phenotype"]
             .agg(lambda x: x.value_counts().index[0])
@@ -101,7 +101,7 @@ def download_genomes(
         typer.echo(f"Error: no se encontró el archivo de etiquetas: {labels}", err=True)
         raise typer.Exit(code=1)
 
-    amr_labels = pandas.read_csv(labels)
+    amr_labels = pandas.read_csv(labels, dtype={"genome_id": str})
 
     if sample_per_species is not None:
         genome_ids = _sample_genome_ids(amr_labels, sample_per_species)

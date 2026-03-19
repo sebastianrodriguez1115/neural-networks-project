@@ -46,7 +46,7 @@ def export_contradictions(labels_path: Path, output_path: Path) -> int:
     Returns:
         Number of contradictory pairs found.
     """
-    dataframe = pandas.read_csv(labels_path)
+    dataframe = pandas.read_csv(labels_path, dtype={"genome_id": str})
 
     contradictory_pairs = (
         dataframe.groupby(["genome_id", "antibiotic"])["resistant_phenotype"]
@@ -78,7 +78,7 @@ def run_eda(labels_path: Path, top_n: int = 20, genomes_dir: Path | None = None)
         top_n:        Número de antibióticos a mostrar en el ranking.
         genomes_dir:  Directorio con archivos .fna. Si se provee, incluye análisis genómico.
     """
-    dataframe = pandas.read_csv(labels_path)
+    dataframe = pandas.read_csv(labels_path, dtype={"genome_id": str})
 
     _print_section("RESUMEN GENERAL")
     _print_overview(dataframe)
@@ -242,7 +242,6 @@ def _print_outliers(dataframe: pandas.DataFrame) -> None:
 
 
 def _print_baseline_benchmark(dataframe: pandas.DataFrame) -> None:
-    import numpy
 
     # Global majority class baseline: always predict "Resistant" (majority class)
     total = len(dataframe)
@@ -303,12 +302,8 @@ def _print_genome_analysis(genomes_dir: Path, dataframe: pandas.DataFrame) -> No
         n_content = sum(r.seq.upper().count("N") for r in records)
         n_pct = n_content / total_length * 100 if total_length > 0 else 0.0
 
-        try:
-            genome_id_key = float(genome_id)
-            matches = dataframe.loc[dataframe["genome_id"] == genome_id_key, "taxon_id"]
-            taxon_id = matches.iloc[0] if not matches.empty else None
-        except (ValueError, TypeError):
-            taxon_id = None
+        matches = dataframe.loc[dataframe["genome_id"] == genome_id, "taxon_id"]
+        taxon_id = matches.iloc[0] if not matches.empty else None
         species = TAXON_ID_TO_SPECIES_NAME.get(taxon_id, "desconocida") if taxon_id else "desconocida"
 
         genome_stats.append({
