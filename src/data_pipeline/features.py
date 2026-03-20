@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class KmerExtractor:
-    """Extracts k-mer frequency histograms from a genome FASTA file."""
+    """Extrae histogramas de frecuencias de k-meros a partir de un archivo FASTA de genoma."""
 
     def __init__(self, fasta_path: Path):
         self._fasta_path = Path(fasta_path)
@@ -36,7 +36,7 @@ class KmerExtractor:
         return self._histograms
 
     def to_mlp_vector(self) -> numpy.ndarray:
-        """Concatenate histograms (k=3,4,5) into a 1344-dim vector."""
+        """Concatena los histogramas (k=3,4,5) en un vector de 1344 dimensiones."""
         if not self._histograms:
             raise RuntimeError("Call extract() before to_mlp_vector()")
         return numpy.concatenate([self._histograms[k] for k in KMER_SIZES])
@@ -49,14 +49,14 @@ class KmerExtractor:
 
     @staticmethod
     def _count_kmers(sequence: str, k: int, histogram: numpy.ndarray) -> None:
-        """Count k-mers using a 2-bit rolling hash. O(n) per sequence.
+        """Cuenta k-meros usando un rolling hash de 2 bits. O(n) por secuencia.
 
-        Each base is encoded as 2 bits (A=00, C=01, G=10, T=11). The hash
-        slides one base at a time via left shift, OR, and AND with a bitmask.
-        Runs of ambiguous bases (e.g. 'N') reset the hash.
+        Cada base se codifica en 2 bits (A=00, C=01, G=10, T=11). El hash
+        avanza una base a la vez mediante desplazamiento izquierdo, OR y AND con máscara.
+        Las rachas de bases ambiguas (p. ej. 'N') reinician el hash.
 
-        Technique: standard 2-bit encoding for DNA k-mer counting.
-        See: Compeau & Pevzner, Bioinformatics Algorithms (2014), Ch. 9.
+        Técnica: codificación 2-bit estándar para conteo de k-meros en ADN.
+        Ver: Compeau & Pevzner, Bioinformatics Algorithms (2014), Cap. 9.
         """
         mask = (4**k) - 1
         current = 0
@@ -74,7 +74,7 @@ class KmerExtractor:
 
 
 def build_antibiotic_index(antibiotics: pandas.Series) -> pandas.DataFrame:
-    """Creates a sorted mapping from antibiotic name to integer index."""
+    """Crea un mapeo ordenado de nombre de antibiótico a índice entero."""
     unique = sorted(antibiotics.unique())
     return pandas.DataFrame({"antibiotic": unique, "index": range(len(unique))})
 
@@ -85,12 +85,12 @@ def split_genomes(
     val_ratio: float = VAL_RATIO,
     random_seed: int = RANDOM_SEED,
 ) -> pandas.DataFrame:
-    """Stratified train/val/test split by genome_id.
+    """Split estratificado train/val/test por genome_id.
 
-    Stratifies on the majority phenotype per genome to preserve
-    class distribution across splits. The partition into estimation
-    (train) and validation subsets follows the cross-validation
-    framework described in Haykin (2009), Section 4.13.
+    Estratifica sobre el fenotipo mayoritario por genoma para preservar
+    la distribución de clases en cada split. La partición en subconjuntos
+    de estimación (train) y validación sigue el marco de validación cruzada
+    descrito en Haykin (2009), Sección 4.13.
     """
     genome_phenotype = (
         labels.groupby("genome_id")["resistant_phenotype"]
@@ -135,12 +135,12 @@ def normalize_features(
     vectors: dict[str, numpy.ndarray],
     train_ids: set[str],
 ) -> tuple[dict[str, numpy.ndarray], numpy.ndarray, numpy.ndarray]:
-    """Z-score normalize using train-set mean and std. Returns (normalized, mean, std).
+    """Normalización z-score usando media y std del train set. Devuelve (normalizado, media, std).
 
-    Each feature is transformed as x' = (x - mean) / std, yielding zero mean
-    and unit variance (LeCun et al., 1998, Section 4.3). Statistics are computed
-    on the train set only to avoid data leakage (Haykin, 2009, Section 4.6,
-    Heuristic 5).
+    Cada feature se transforma como x' = (x - media) / std, resultando en media cero
+    y varianza unitaria (LeCun et al., 1998, Sección 4.3). Las estadísticas se calculan
+    solo sobre el train set para evitar data leakage (Haykin, 2009, Sección 4.6,
+    Heurístico 5).
     """
     train_matrix = numpy.stack([vectors[gid] for gid in sorted(train_ids)])
     mean = train_matrix.mean(axis=0)
@@ -151,10 +151,10 @@ def normalize_features(
 
 
 def mlp_vector_to_bigru_matrix(mlp_vector: numpy.ndarray) -> numpy.ndarray:
-    """Convert a 1344-dim MLP vector into a [1024, 3] BiGRU input matrix.
+    """Convierte un vector MLP de 1344 dims en una matriz de entrada BiGRU de [1024, 3].
 
-    Splits the vector back into histograms (64, 256, 1024), pads each
-    to 1024 with zeros, and stacks as columns.
+    Separa el vector en sus histogramas originales (64, 256, 1024), rellena cada uno
+    con ceros hasta 1024 y los apila como columnas.
     """
     columns = []
     offset = 0

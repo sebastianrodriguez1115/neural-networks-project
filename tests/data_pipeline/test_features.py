@@ -1,12 +1,12 @@
 """
 test_features.py
 
-Tests for data_pipeline/features.py:
-    - KmerExtractor: vector dimensions, kmer counting
-    - build_antibiotic_index: sorted mapping
-    - normalize_features: uses train-set stats, not full-set stats
-    - mlp_vector_to_bigru_matrix: output shape
-    - split_genomes: ratios, all genomes assigned, stratification
+Tests de data_pipeline/features.py:
+    - KmerExtractor: dimensiones del vector, conteo de k-meros
+    - build_antibiotic_index: mapeo ordenado
+    - normalize_features: usa estadísticas del train set, no del dataset completo
+    - mlp_vector_to_bigru_matrix: forma del output
+    - split_genomes: ratios, todos los genomas asignados, estratificación
 """
 
 import numpy
@@ -31,7 +31,7 @@ def _write_fasta(path, sequence="ACGT" * 10):
 
 
 def _make_labels(n_resistant: int = 10, n_susceptible: int = 10) -> pandas.DataFrame:
-    """Creates a balanced label DataFrame with one antibiotic per genome."""
+    """Crea un DataFrame de etiquetas balanceado con un antibiótico por genoma."""
     rows = (
         [(f"r{i}", "amikacin", "Resistant") for i in range(n_resistant)]
         + [(f"s{i}", "amikacin", "Susceptible") for i in range(n_susceptible)]
@@ -120,7 +120,7 @@ def test_normalize_features_uses_train_mean_not_full_mean():
     vectors = {
         "g1": numpy.array([1.0, 2.0]),
         "g2": numpy.array([3.0, 4.0]),
-        "g3": numpy.array([100.0, 200.0]),  # test-only outlier
+        "g3": numpy.array([100.0, 200.0]),  # outlier exclusivo del test
     }
     train_ids = {"g1", "g2"}
 
@@ -147,7 +147,7 @@ def test_normalize_features_zero_std_columns_become_one():
 
     _, _, std = normalize_features(vectors, train_ids)
 
-    assert std[0] == pytest.approx(1.0)  # zero std replaced with 1.0
+    assert std[0] == pytest.approx(1.0)  # std cero reemplazado por 1.0
 
 
 # ── mlp_vector_to_bigru_matrix ─────────────────────────────────────────────────
@@ -164,11 +164,11 @@ def test_mlp_vector_to_bigru_matrix_padded_positions_are_zero():
     vec = numpy.ones(TOTAL_KMER_DIM)
     matrix = mlp_vector_to_bigru_matrix(vec)
 
-    # k=3 histogram: 64 dims padded to 1024 — positions 64..1023 in col 0 must be 0
+    # histograma k=3: 64 dims rellenas a 1024 — posiciones 64..1023 en col 0 deben ser 0
     assert matrix[64, 0] == pytest.approx(0.0)
-    # k=4 histogram: 256 dims padded to 1024 — positions 256..1023 in col 1 must be 0
+    # histograma k=4: 256 dims rellenas a 1024 — posiciones 256..1023 en col 1 deben ser 0
     assert matrix[256, 1] == pytest.approx(0.0)
-    # k=5 histogram: 1024 dims exactly — no padding in col 2
+    # histograma k=5: 1024 dims exactas — sin relleno en col 2
     assert matrix[1023, 2] == pytest.approx(1.0)
 
 

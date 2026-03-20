@@ -202,7 +202,7 @@ def _print_data_quality(dataframe: pandas.DataFrame) -> None:
 
 
 def _print_outliers(dataframe: pandas.DataFrame) -> None:
-    # Genomes with extreme number of records
+    # Genomas con número extremo de registros
     genome_counts = dataframe.groupby("genome_id").size()
     mean_records = genome_counts.mean()
     std_records = genome_counts.std()
@@ -215,7 +215,7 @@ def _print_outliers(dataframe: pandas.DataFrame) -> None:
         for genome_id, count in outlier_genomes.sort_values(ascending=False).head(5).items():
             print(f"    {genome_id}  →  {count} registros")
 
-    # Antibiotics with extreme class imbalance (>90% one class)
+    # Antibióticos con desbalance extremo de clases (>90% una clase)
     print()
     imbalanced = []
     for antibiotic, group in dataframe.groupby("antibiotic"):
@@ -231,7 +231,7 @@ def _print_outliers(dataframe: pandas.DataFrame) -> None:
     for antibiotic, count, resistant_pct in imbalanced[:10]:
         print(f"  {antibiotic:<35} {count:>10,} {resistant_pct:>6.1f}%")
 
-    # Conflicting labels: same genome_id + antibiotic with different phenotypes
+    # Etiquetas contradictorias: mismo genome_id + antibiótico con fenotipos distintos
     conflicts = (
         dataframe.groupby(["genome_id", "antibiotic"])["resistant_phenotype"]
         .nunique()
@@ -243,7 +243,7 @@ def _print_outliers(dataframe: pandas.DataFrame) -> None:
 
 def _print_baseline_benchmark(dataframe: pandas.DataFrame) -> None:
 
-    # Global majority class baseline: always predict "Resistant" (majority class)
+    # Baseline de clase mayoritaria global: siempre predecir "Resistant" (clase mayoritaria)
     total = len(dataframe)
     resistant_count = (dataframe["resistant_phenotype"] == "Resistant").sum()
     susceptible_count = total - resistant_count
@@ -251,7 +251,7 @@ def _print_baseline_benchmark(dataframe: pandas.DataFrame) -> None:
     majority_accuracy = max(resistant_count, susceptible_count) / total * 100
     print(f"  Majority class global: '{majority_class}' — accuracy: {majority_accuracy:.1f}%")
 
-    # Per-antibiotic majority class baseline
+    # Baseline de clase mayoritaria por antibiótico
     y_true = []
     y_pred = []
     for antibiotic, group in dataframe.groupby("antibiotic"):

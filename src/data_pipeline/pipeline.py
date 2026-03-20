@@ -27,10 +27,13 @@ def _clean_labels(labels_path: Path, output_dir: Path) -> pandas.DataFrame:
     return cleaned
 
 
-def _filter_genomes(cleaned: pandas.DataFrame, fasta_dir: Path) -> pandas.DataFrame:
+def _filter_genomes(
+    cleaned: pandas.DataFrame, fasta_dir: Path, output_dir: Path
+) -> pandas.DataFrame:
     logger.info("Step 2: Genomic quality filter")
     all_genome_ids = cleaned["genome_id"].unique().tolist()
-    valid_genomes = GenomeFilter(fasta_dir).filter(all_genome_ids)
+    genome_filter = GenomeFilter(fasta_dir)
+    valid_genomes = genome_filter.filter(all_genome_ids)
     filtered = cleaned[cleaned["genome_id"].isin(valid_genomes)].reset_index(
         drop=True
     )
@@ -38,7 +41,21 @@ def _filter_genomes(cleaned: pandas.DataFrame, fasta_dir: Path) -> pandas.DataFr
         f"Labels after genomic filter: {len(filtered)} records, "
         f"{filtered['genome_id'].nunique()} genomes"
     )
+    _save_discarded_genomes(genome_filter, output_dir)
     return filtered
+
+
+def _save_discarded_genomes(genome_filter: GenomeFilter, output_dir: Path) -> None:
+    rows = []
+    for genome_id in genome_filter.missing:
+        rows.append({"genome_id": genome_id, "reason": "missing_fasta"})
+    for genome_id in genome_filter.short:
+        rows.append({"genome_id": genome_id, "reason": "below_min_length"})
+    if not rows:
+        return
+    path = output_dir / "discarded_genomes.csv"
+    pandas.DataFrame(rows).to_csv(path, index=False)
+    logger.info(f"Discarded genomes ({len(rows)}) saved to: {path}")
 
 
 def _save_antibiotic_index(
@@ -115,14 +132,14 @@ def run_pipeline(
     fasta_dir: Path,
     output_dir: Path,
 ) -> None:
-    """Runs the full data preprocessing pipeline."""
+    """Ejecuta el pipeline completo de preprocesamiento de datos."""
     labels_path = Path(labels_path)
     fasta_dir = Path(fasta_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     cleaned = _clean_labels(labels_path, output_dir)
-    cleaned = _filter_genomes(cleaned, fasta_dir)
+    cleaned = _filter_genomes(cleaned, fasta_dir, output_dir)
     _save_antibiotic_index(cleaned, output_dir)
     _, train_ids = _split_genomes(cleaned, output_dir)
     genome_list = sorted(cleaned["genome_id"].unique())

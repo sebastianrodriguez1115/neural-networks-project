@@ -1,9 +1,9 @@
 """
 test_http.py
 
-Tests for bvbrc/_http.py:
-    - parse_total_records_from_content_range (pure function)
-    - make_api_request_with_retries (mocked requests.get)
+Tests de bvbrc/_http.py:
+    - parse_total_records_from_content_range (función pura)
+    - make_api_request_with_retries (requests.get mockeado)
 """
 
 from unittest.mock import MagicMock, patch
@@ -74,7 +74,7 @@ def test_retries_on_transient_error_and_succeeds(_mock_sleep):
     mock_response.raise_for_status.return_value = None
 
     with patch("bvbrc._http.requests.get") as mock_get:
-        # First two attempts fail, third succeeds
+        # Los primeros dos intentos fallan, el tercero tiene éxito
         mock_get.side_effect = [
             requests.exceptions.ConnectionError("timeout"),
             requests.exceptions.ConnectionError("timeout"),

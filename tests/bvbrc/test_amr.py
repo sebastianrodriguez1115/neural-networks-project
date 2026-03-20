@@ -1,9 +1,9 @@
 """
 test_amr.py
 
-Tests for bvbrc/amr.py:
-    - _build_amr_rql_query (pure function)
-    - fetch_amr_labels (mocked make_api_request_with_retries)
+Tests de bvbrc/amr.py:
+    - _build_amr_rql_query (función pura)
+    - fetch_amr_labels (make_api_request_with_retries mockeado)
 """
 
 from unittest.mock import MagicMock, patch
@@ -23,7 +23,7 @@ from bvbrc._http import PAGE_SIZE
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _make_mock_amr_response(records: list[dict], content_range: str | None = None) -> MagicMock:
-    """Creates a mocked HTTP response with the given AMR records."""
+    """Crea una respuesta HTTP mockeada con los registros AMR dados."""
     mock_response = MagicMock()
     mock_response.json.return_value = records
     mock_response.headers = {"Content-Range": content_range} if content_range else {}
@@ -31,7 +31,7 @@ def _make_mock_amr_response(records: list[dict], content_range: str | None = Non
 
 
 def _make_fake_amr_record(genome_id: str = "1280.1", phenotype: str = "Resistant") -> dict:
-    """Creates a minimal valid AMR record for use in tests."""
+    """Crea un registro AMR mínimo válido para usar en tests."""
     return {
         "genome_id": genome_id,
         "taxon_id": 1280,
@@ -65,7 +65,7 @@ def test_query_includes_only_binary_phenotypes():
 
 
 def test_query_implicitly_excludes_intermediate():
-    """Intermediate must not appear as an allowed value in the query."""
+    """Intermediate no debe aparecer como valor permitido en la consulta."""
     query = AMRFetcher._build_query([1280])
     assert "Intermediate" not in query
 
@@ -105,8 +105,8 @@ def test_returns_empty_dataframe_when_no_records():
 
 def test_paginates_until_batch_is_smaller_than_page_size():
     """
-    Simulates two pages: first returns PAGE_SIZE records (more available),
-    the second returns fewer (last page). Total must be PAGE_SIZE + 1.
+    Simula dos páginas: la primera devuelve PAGE_SIZE registros (hay más disponibles),
+    la segunda devuelve menos (última página). El total debe ser PAGE_SIZE + 1.
     """
     first_batch = [_make_fake_amr_record(f"1280.{i}") for i in range(PAGE_SIZE)]
     second_batch = [_make_fake_amr_record("1280.99999")]
@@ -127,7 +127,7 @@ def test_paginates_until_batch_is_smaller_than_page_size():
 
 
 def test_uses_eskape_taxons_by_default():
-    """Without taxon_ids, the request URL must contain all ESKAPE taxon IDs."""
+    """Sin taxon_ids, la URL del request debe contener todos los taxon IDs ESKAPE."""
     mock_response = _make_mock_amr_response([])
 
     with patch(

@@ -1,9 +1,9 @@
 """
 test_genomes.py
 
-Tests for bvbrc/genomes.py:
-    - download_genome_fasta (mocked make_api_request_with_retries)
-    - download_multiple_genomes_fasta (mocked make_api_request_with_retries)
+Tests de bvbrc/genomes.py:
+    - download_genome_fasta (make_api_request_with_retries mockeado)
+    - download_multiple_genomes_fasta (make_api_request_with_retries mockeado)
 """
 
 from unittest.mock import MagicMock, patch
@@ -19,7 +19,7 @@ FAKE_FASTA_CONTENT = ">contig1\nATGCATGCATGC\n>contig2\nGGGCCCAAATTT\n"
 
 
 def _make_mock_fasta_response(content: str = FAKE_FASTA_CONTENT) -> MagicMock:
-    """Creates a mocked HTTP response with the given FASTA content."""
+    """Crea una respuesta HTTP mockeada con el contenido FASTA dado."""
     mock_response = MagicMock()
     mock_response.text = content
     return mock_response
@@ -49,7 +49,7 @@ def test_output_filename_uses_genome_id(tmp_path):
 
 
 def test_skips_download_if_file_already_exists(tmp_path):
-    """If the .fna file is already on disk, no HTTP request should be made."""
+    """Si el archivo .fna ya existe en disco, no debe realizarse ningún request HTTP."""
     existing_file = tmp_path / "1280.12345.fna"
     existing_file.write_text(FAKE_FASTA_CONTENT)
 
@@ -71,7 +71,7 @@ def test_creates_output_directory_if_missing(tmp_path):
 
 
 def test_raises_error_on_empty_fasta_response(tmp_path):
-    """An empty response indicates an invalid genome_id or no sequences in BV-BRC."""
+    """Una respuesta vacía indica un genome_id inválido o sin secuencias en BV-BRC."""
     mock_response = _make_mock_fasta_response(content="   ")
 
     with patch("bvbrc.genomes.make_api_request_with_retries", return_value=mock_response):
@@ -80,7 +80,7 @@ def test_raises_error_on_empty_fasta_response(tmp_path):
 
 
 def test_does_not_create_file_on_invalid_response(tmp_path):
-    """If the download fails, no file should be left on disk."""
+    """Si la descarga falla, no debe quedar ningún archivo en disco."""
     mock_response = _make_mock_fasta_response(content="")
 
     with patch("bvbrc.genomes.make_api_request_with_retries", return_value=mock_response):
@@ -104,9 +104,9 @@ def test_downloads_multiple_genomes_successfully(tmp_path):
 
 
 def test_continues_downloading_if_one_genome_fails(tmp_path):
-    """A single failure must not stop the rest of the downloads."""
+    """Un fallo individual no debe detener el resto de las descargas."""
     good_response = _make_mock_fasta_response()
-    bad_response = _make_mock_fasta_response(content="")  # empty → RuntimeError
+    bad_response = _make_mock_fasta_response(content="")  # vacío → RuntimeError
 
     with patch(
         "bvbrc.genomes.make_api_request_with_retries",
@@ -115,7 +115,7 @@ def test_continues_downloading_if_one_genome_fails(tmp_path):
         result = download_multiple_genomes_fasta(["1280.1", "1280.2", "1280.3"], tmp_path)
 
     assert "1280.1" in result
-    assert "1280.2" not in result  # this one failed
+    assert "1280.2" not in result  # este falló
     assert "1280.3" in result
 
 

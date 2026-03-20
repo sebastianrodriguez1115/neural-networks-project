@@ -1,4 +1,4 @@
-# CLAUDE.md — Instrucciones para agentes IA
+# AGENTS.md — Instrucciones para agentes IA
 
 ## Qué es este proyecto
 Proyecto académico: predecir resistencia antimicrobiana (AMR) en bacterias a partir de secuencias genómicas completas (WGS) usando dos redes neuronales:

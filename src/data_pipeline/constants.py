@@ -1,4 +1,4 @@
-"""Shared constants for the data_pipeline package."""
+"""Constantes compartidas del paquete data_pipeline."""
 
 KMER_SIZES = [3, 4, 5]
 KMER_DIMS = [4**k for k in KMER_SIZES]  # [64, 256, 1024]

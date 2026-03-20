@@ -91,10 +91,18 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 
 ## Changelog
 
+### 2026-03-19
+
+#### Mejora al data pipeline: registro de genomas descartados
+- `GenomeFilter` ahora expone propiedades `missing` y `short` para acceder a los genome_id descartados
+- `_filter_genomes()` en `pipeline.py` guarda `discarded_genomes.csv` en el directorio de salida (columnas: `genome_id`, `reason`)
+- Razones registradas: `missing_fasta` (sin archivo FASTA en disco), `below_min_length` (genoma < 0.5 Mb)
+- Pendiente: persistir también los fallos de descarga desde `GenomeBatchFetcher` en `src/bvbrc/genomes.py`
+
 ### 2026-03-18
 
 #### Code review y bugfixes
-- Code review completo del proyecto contra PEP 8 y CLAUDE.md (26 issues encontrados)
+- Code review completo del proyecto contra PEP 8 y AGENTS.md (26 issues encontrados)
 - **Bugs corregidos:**
   - `eda.py`: eliminado `import numpy` redundante en `_print_baseline_benchmark`
   - `eda.py`: `genome_id` se comparaba como `float` en análisis genómico — corregido a comparación como `str`

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class LabelCleaner:
-    """Removes contradictory pairs and consistent duplicates from AMR labels."""
+    """Elimina pares contradictorios y duplicados consistentes de las etiquetas AMR."""
 
     def __init__(self, labels_path: Path):
         self._labels_path = Path(labels_path)
@@ -63,9 +63,9 @@ class LabelCleaner:
 
 
 class GenomeFilter:
-    """Filters genomes by FASTA availability and minimum sequence length.
+    """Filtra genomas por disponibilidad de FASTA y longitud mínima de secuencia.
 
-    Note: filter() accumulates state and should only be called once per instance.
+    Nota: filter() acumula estado interno y debe llamarse solo una vez por instancia.
     """
 
     def __init__(self, fasta_dir: Path, min_length: int = MIN_GENOME_LENGTH):
@@ -96,6 +96,14 @@ class GenomeFilter:
             f"{len(self._missing)} missing FASTA"
         )
         return self._valid
+
+    @property
+    def missing(self) -> list[str]:
+        return self._missing
+
+    @property
+    def short(self) -> list[str]:
+        return self._short
 
     @staticmethod
     def _compute_length(fasta_path: Path) -> int:

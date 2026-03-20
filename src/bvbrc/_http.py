@@ -18,7 +18,7 @@ BVBRC_API_BASE_URL = "https://www.bv-brc.org/api"
 
 # Tiempo de espera entre requests consecutivos (segundos).
 # No hay límite de tasa documentado, pero se agrega como cortesía con el servidor.
-SLEEP_BETWEEN_REQUESTS = 0.5
+SLEEP_BETWEEN_REQUESTS = 0.1
 
 # Número máximo de registros por request (límite de la API de BV-BRC).
 PAGE_SIZE = 25000

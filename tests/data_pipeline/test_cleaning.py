@@ -1,9 +1,9 @@
 """
 test_cleaning.py
 
-Tests for data_pipeline/cleaning.py:
-    - LabelCleaner: contradictory pair removal, deduplication
-    - GenomeFilter: missing FASTA filtering, short genome filtering, valid genome pass-through
+Tests de data_pipeline/cleaning.py:
+    - LabelCleaner: eliminación de pares contradictorios, deduplicación
+    - GenomeFilter: filtro por FASTA faltante, filtro por genoma corto, paso de genomas válidos
 """
 
 import textwrap
@@ -19,13 +19,13 @@ from data_pipeline.cleaning import GenomeFilter, LabelCleaner
 
 
 def _write_labels(path: Path, rows: list[tuple[str, str, str]]) -> None:
-    """Writes a minimal AMR labels CSV."""
+    """Escribe un CSV mínimo de etiquetas AMR."""
     df = pandas.DataFrame(rows, columns=["genome_id", "antibiotic", "resistant_phenotype"])
     df.to_csv(path, index=False)
 
 
 def _write_fasta(path: Path, sequence: str = "ACGT" * 125_000) -> None:
-    """Writes a FASTA file. Default sequence is 500 000 bp (meets MIN_GENOME_LENGTH)."""
+    """Escribe un archivo FASTA. La secuencia por defecto es 500 000 pb (supera MIN_GENOME_LENGTH)."""
     path.write_text(f">contig1\n{sequence}\n")
 
 
@@ -36,8 +36,8 @@ def test_label_cleaner_removes_contradictory_pairs(tmp_path):
     csv = tmp_path / "labels.csv"
     _write_labels(csv, [
         ("1.1", "amikacin", "Resistant"),
-        ("1.1", "amikacin", "Susceptible"),  # contradictory — both rows removed
-        ("1.2", "amikacin", "Resistant"),    # clean — kept
+        ("1.1", "amikacin", "Susceptible"),  # contradictorio — ambas filas se eliminan
+        ("1.2", "amikacin", "Resistant"),    # limpio — se conserva
     ])
 
     result = LabelCleaner(csv).clean()
@@ -62,7 +62,7 @@ def test_label_cleaner_removes_consistent_duplicates(tmp_path):
     csv = tmp_path / "labels.csv"
     _write_labels(csv, [
         ("1.1", "amikacin", "Resistant"),
-        ("1.1", "amikacin", "Resistant"),  # exact duplicate — one removed
+        ("1.1", "amikacin", "Resistant"),  # duplicado exacto — uno se elimina
     ])
 
     result = LabelCleaner(csv).clean()
@@ -88,7 +88,7 @@ def test_label_cleaner_casts_genome_id_to_str(tmp_path):
 
     result = LabelCleaner(csv).clean()
 
-    assert pandas.api.types.is_string_dtype(result["genome_id"])  # str dtype in pandas
+    assert pandas.api.types.is_string_dtype(result["genome_id"])  # tipo str en pandas
 
 
 # ── GenomeFilter ───────────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ def test_label_cleaner_casts_genome_id_to_str(tmp_path):
 def test_genome_filter_excludes_missing_fasta(tmp_path):
     fasta_dir = tmp_path / "fastas"
     fasta_dir.mkdir()
-    # No FASTA files created
+    # No se crean archivos FASTA
 
     valid = GenomeFilter(fasta_dir).filter(["genome_1"])
 
@@ -107,7 +107,7 @@ def test_genome_filter_excludes_missing_fasta(tmp_path):
 def test_genome_filter_excludes_short_genomes(tmp_path):
     fasta_dir = tmp_path / "fastas"
     fasta_dir.mkdir()
-    _write_fasta(fasta_dir / "short.fna", sequence="ACGT" * 10)  # 40 bp — too short
+    _write_fasta(fasta_dir / "short.fna", sequence="ACGT" * 10)  # 40 pb — demasiado corto
 
     valid = GenomeFilter(fasta_dir, min_length=500_000).filter(["short"])
 
@@ -117,7 +117,7 @@ def test_genome_filter_excludes_short_genomes(tmp_path):
 def test_genome_filter_includes_valid_genomes(tmp_path):
     fasta_dir = tmp_path / "fastas"
     fasta_dir.mkdir()
-    _write_fasta(fasta_dir / "valid.fna")  # 500 000 bp — meets threshold
+    _write_fasta(fasta_dir / "valid.fna")  # 500 000 pb — supera el umbral
 
     valid = GenomeFilter(fasta_dir).filter(["valid"])
 

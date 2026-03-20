@@ -15,16 +15,15 @@
 
 ```
 proyecto_redes_neuronales/
-├── src/
-│   ├── bvbrc/            # Descarga de datos desde BV-BRC
-│   │   ├── _http.py      #   Utilidades HTTP compartidas
-│   │   ├── amr.py        #   Etiquetas AMR (genome_amr endpoint)
-│   │   └── genomes.py    #   Genomas FASTA (genome_sequence endpoint)
-│   ├── data_pipeline.py  # Preprocesamiento: etiquetas, k-meros, splits
+├── src/                  # Código fuente — ver src/README.md para detalle de cada módulo
+│   ├── bvbrc/            # Cliente HTTP para la API REST de BV-BRC
+│   ├── data_pipeline/    # Preprocesamiento: etiquetas, k-meros, splits
+│   ├── eda.py            # Análisis exploratorio (EDA)
 │   ├── models.py         # Definición de MLP y BiGRU+Attention
 │   └── train.py          # Loop de entrenamiento y evaluación
 ├── tests/
-│   └── bvbrc/            # Unit tests del paquete bvbrc
+│   ├── bvbrc/            # Unit tests del paquete bvbrc
+│   └── data_pipeline/    # Unit tests del data pipeline
 ├── data/
 │   ├── raw/              # Genomas FASTA descargados
 │   └── processed/        # Etiquetas CSV, vectores k-meros (.npy)
@@ -34,9 +33,10 @@ proyecto_redes_neuronales/
 │   ├── proposal/         # Propuesta del proyecto
 │   ├── reference/        # Referencia técnica (API, etc.)
 │   └── 1–5_*.md          # Documentos de diseño e implementación
-├── PROGRESS.md           # Estado de implementación por fases
-└── CHANGELOG.md          # Registro de cambios
+└── main.py               # CLI (Typer) — punto de entrada
 ```
+
+> Índice detallado de `src/` con descripción de cada archivo y flujo de datos: [`src/README.md`](../src/README.md)
 
 ## Instalación
 

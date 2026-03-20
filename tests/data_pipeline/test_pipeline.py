@@ -1,9 +1,9 @@
 """
 test_pipeline.py
 
-Integration test for data_pipeline/pipeline.py.
-Tests run_pipeline end-to-end with synthetic FASTA files and a minimal labels CSV.
-Private orchestration functions are covered indirectly via run_pipeline.
+Test de integración de data_pipeline/pipeline.py.
+Prueba run_pipeline de extremo a extremo con archivos FASTA sintéticos y un CSV de etiquetas mínimo.
+Las funciones privadas de orquestación quedan cubiertas indirectamente a través de run_pipeline.
 """
 
 import numpy
@@ -17,13 +17,13 @@ from data_pipeline.pipeline import run_pipeline
 
 
 def _write_fasta(path, n_bases: int = 500_000) -> None:
-    """Writes a FASTA file with n_bases bp (default meets MIN_GENOME_LENGTH)."""
+    """Escribe un archivo FASTA con n_bases pb (el valor por defecto supera MIN_GENOME_LENGTH)."""
     sequence = ("ACGT" * (n_bases // 4 + 1))[:n_bases]
     path.write_text(f">contig1\n{sequence}\n")
 
 
 def _make_labels_csv(path, genome_ids: list[str]) -> None:
-    """Writes a labels CSV alternating Resistant/Susceptible by genome position."""
+    """Escribe un CSV de etiquetas alternando Resistant/Susceptible por posición de genoma."""
     rows = [
         (gid, "amikacin", "Resistant" if i % 2 == 0 else "Susceptible")
         for i, gid in enumerate(genome_ids)
@@ -35,11 +35,11 @@ def _make_labels_csv(path, genome_ids: list[str]) -> None:
 
 @pytest.fixture(scope="module")
 def pipeline_output(tmp_path_factory):
-    """Runs run_pipeline once for all tests in this module.
+    """Ejecuta run_pipeline una sola vez para todos los tests del módulo.
 
-    Creates 20 genomes (10 R, 10 S), writes FASTA files and labels CSV,
-    executes the full pipeline, and returns (output_dir, genome_ids).
-    Uses module scope to avoid running the expensive pipeline 6 times.
+    Crea 20 genomas (10 R, 10 S), escribe archivos FASTA y el CSV de etiquetas,
+    ejecuta el pipeline completo y devuelve (output_dir, genome_ids).
+    Usa scope de módulo para no ejecutar el pipeline costoso 6 veces.
     """
     tmp_path = tmp_path_factory.mktemp("pipeline")
     genome_ids = [f"1.{i}" for i in range(1, 21)]
