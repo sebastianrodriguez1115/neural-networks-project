@@ -33,6 +33,15 @@ uv run python main.py download-genomes --sample-per-species 20 --output-dir data
 - Excluir etiquetas intermedias (`Intermediate`)
 - Resultado: un archivo con triples `(genome_id, antibiotic, label)`
 
+#### Comandos CLI
+
+```bash
+# Exportar pares con etiquetas contradictorias a CSV para inspección (rutas por defecto):
+uv run python main.py export-contradictions-cmd
+# Rutas personalizadas:
+uv run python main.py export-contradictions-cmd --labels data/processed/amr_labels.csv --output data/processed/contradictory_labels.csv
+```
+
 ### 3. Extracción de k-meros
 - Para el **MLP**: extraer histogramas de frecuencia para k=3, 4, 5 y concatenarlos en un vector
   - Tamaño del vector: 4³ + 4⁴ + 4⁵ = 64 + 256 + 1024 = 1344 dimensiones
@@ -49,6 +58,31 @@ uv run python main.py download-genomes --sample-per-species 20 --output-dir data
 - Split estratificado: 70% entrenamiento / 15% validación / 15% prueba
 - Split por `genome_id` (no por registro) para evitar data leakage — el mismo genoma no puede aparecer en más de un conjunto
 - Estratificación por etiqueta dentro del split para preservar proporción de clases
+
+### Ejecutar el pipeline completo
+
+Los pasos 2–5 están orquestados en el comando `prepare-data`, que debe ejecutarse después de completar la descarga.
+
+#### Comandos CLI
+
+```bash
+# Pipeline completo con rutas por defecto:
+uv run python main.py prepare-data
+
+# Rutas personalizadas:
+uv run python main.py prepare-data \
+    --labels data/processed/amr_labels.csv \
+    --fasta-dir data/raw/fasta \
+    --output-dir data/processed
+```
+
+El comando genera en `output_dir`:
+- `cleaned_labels.csv` — triples limpios `(genome_id, antibiotic, label)`
+- `antibiotic_index.csv` — mapeo antibiótico → entero
+- `splits.csv` — asignación de cada `genome_id` a train/val/test
+- `discarded_genomes.csv` — genomas descartados con motivo (`missing_fasta`, `below_min_length`)
+- `mlp/<genome_id>.npy` — vector 1344-dim por genoma
+- `bigru/<genome_id>.npy` — matriz `[1024, 3]` por genoma
 
 ## Decisiones pendientes
 - [x] Qué organismo(s) bacteriano(s) usar → ESKAPE completo (*E. faecium, S. aureus, K. pneumoniae, A. baumannii, P. aeruginosa, Enterobacter spp.*), modelo único entrenado con todas las especies

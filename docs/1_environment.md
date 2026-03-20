@@ -1,7 +1,7 @@
 # Entorno y uso
 
 ## Stack
-- **Lenguaje:** Python 3.10+
+- **Lenguaje:** Python 3.13
 - **Framework de deep learning:** PyTorch
 - **Gestor de entorno:** uv
 - **Librerías principales:**
@@ -40,13 +40,33 @@ proyecto_redes_neuronales/
 
 ## Instalación
 
-**Requisitos:** Python 3.10+, [uv](https://docs.astral.sh/uv/getting-started/installation/)
+**Requisitos:** Python 3.13 (gestionado automáticamente por uv), [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
 git clone <url-del-repo>
 cd proyecto_redes_neuronales
+
+# 1. Crear el entorno virtual (opcional si usas 'uv sync' directamente)
+uv venv
+
+# 2. Sincronizar dependencias (crea el .venv si no existe)
 uv sync
 ```
+
+### Gestión del entorno virtual con `uv`
+
+- **Creación:** Al ejecutar `uv venv`, `uv` detecta automáticamente el archivo `.python-version` (que actualmente especifica la versión **3.13**) y crea un entorno virtual en la carpeta `.venv`.
+- **Opciones comunes:**
+  - Especificar versión: `uv venv --python 3.12`
+  - Nombre personalizado: `uv venv mi_entorno`
+- **Activación:**
+  - **Linux/macOS:** `source .venv/bin/activate`
+  - **Windows:** `.venv\Scripts\activate`
+- **Sincronización:** `uv sync` asegura que las librerías instaladas coincidan exactamente con lo definido en `uv.lock`.
+- **Ejecución sin activación:** Puedes correr comandos directamente sin activar el entorno usando `uv run`:
+  ```bash
+  uv run python main.py --help
+  ```
 
 ## CLI
 
