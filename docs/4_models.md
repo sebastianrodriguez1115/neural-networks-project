@@ -2,6 +2,16 @@
 
 ## Modelo A — MLP (línea de base superficial)
 
+**Nota sobre profundidad:** La arquitectura usa 2 capas ocultas (512 → 128), lo cual
+técnicamente supera la definición mínima de "deep" (>1 capa oculta). Sin embargo, la
+consideramos superficial en el contexto de este proyecto por dos razones: (1) la propuesta
+define "superficial" en contraste con la BiGRU+Attention, que posee capas recurrentes,
+mecanismo de atención y mayor capacidad de modelar dependencias secuenciales; (2) en
+la literatura de deep learning, redes de 2-3 capas densas se consideran shallow frente a
+arquitecturas con decenas o cientos de capas. La segunda capa oculta (128) cumple un rol
+de compresión progresiva — reduce la dimensionalidad antes de la capa de salida — y no
+introduce la complejidad arquitectónica que distingue a un modelo profundo.
+
 **Entradas:**
 - Vector de histograma de k-meros concatenado (1344 dimensiones, normalizado)
 - Antibiótico como índice entero → embedding aprendido (dim TBD)
