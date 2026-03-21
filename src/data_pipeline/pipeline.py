@@ -1,4 +1,5 @@
 import concurrent.futures
+import json
 import logging
 import os
 from functools import partial
@@ -90,6 +91,16 @@ def _split_genomes(
         f"pos_weight (train set): {pos_weight:.4f} "
         f"(Susceptible={n_susceptible}, Resistant={n_resistant})"
     )
+
+    stats = {
+        "n_resistant": int(n_resistant),
+        "n_susceptible": int(n_susceptible),
+        "pos_weight": pos_weight,
+    }
+    stats_path = output_dir / "train_stats.json"
+    stats_path.write_text(json.dumps(stats, indent=2))
+    logger.info(f"Train stats saved to: {stats_path}")
+
     return splits, train_ids
 
 
