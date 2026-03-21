@@ -29,6 +29,7 @@ uv run python main.py download-genomes --sample-per-species 20 --output-dir data
 ```
 
 ### 2. Preprocesamiento de etiquetas
+- Filtrar únicamente registros con `laboratory_typing_method == 'Broth dilution'` (estándar de oro para MIC; recomendación del equipo)
 - Conservar solo etiquetas binarias: `Resistant` / `Susceptible`
 - Excluir etiquetas intermedias (`Intermediate`)
 - Resultado: un archivo con triples `(genome_id, antibiotic, label)`

@@ -40,10 +40,10 @@ El desbalance entre especies es significativo y representa un confound potencial
 
 | Especie | Registros | Genomas | R% | S% |
 |---|---|---|---|---|
-| *Klebsiella pneumoniae* | 66,140 | 5,750 | 63.6% | 36.4% |
-| *Staphylococcus aureus* | 41,458 | 4,437 | 27.6% | 72.4% |
-| *Acinetobacter baumannii* | 24,193 | 1,426 | 79.5% | 20.5% |
 | *Enterococcus faecium* | 22,318 | 3,214 | 47.8% | 52.2% |
+| *Staphylococcus aureus* | 41,458 | 4,437 | 27.6% | 72.4% |
+| *Klebsiella pneumoniae* | 66,140 | 5,750 | 63.6% | 36.4% |
+| *Acinetobacter baumannii* | 24,193 | 1,426 | 79.5% | 20.5% |
 | *Pseudomonas aeruginosa* | 8,061 | 1,377 | 50.9% | 49.1% |
 
 *A. baumannii* tiene 80% Resistant mientras *S. aureus* tiene 72% Susceptible — extremos opuestos. Mitigación: no incluir `taxon_id` como feature; la especie queda implícita en los k-meros del genoma.
@@ -74,6 +74,23 @@ Los 5 antibióticos con más registros cubren una mezcla de perfiles:
 
 ---
 
+## Métodos de laboratorio
+
+El dataset incluye diversos métodos de fenotipado. La consistencia técnica entre estos métodos es crucial para la calidad de las etiquetas.
+
+| Método de laboratorio | Registros | % |
+|---|---|---|
+| **Broth dilution** | **86,705** | **53.5%** |
+| Nulo (No especificado) | 23,321 | 14.4% |
+| Disk diffusion | 20,444 | 12.6% |
+| MIC | 14,886 | 9.2% |
+| Biofosun Gram-positive panels | 8,406 | 5.2% |
+| Otros (Vitek, Agar dilution, etc.) | 8,408 | 5.2% |
+
+> **Recomendación del equipo:** Filtrar el dataset para concentrar el entrenamiento únicamente en registros con el método **'Broth dilution'**. Es considerado el *estándar de oro* para determinar la Concentración Mínima Inhibitoria (MIC) y asegura la mayor consistencia biológica en las etiquetas.
+
+---
+
 ## Calidad de datos
 
 ### Valores nulos
@@ -100,11 +117,11 @@ Se analizó una muestra de 138 genomas (30 por especie, estratificados por fenot
 
 | Especie | N | Long. media (Mb) | Contigs med. | GC% med. |
 |---|---|---|---|---|
-| *Pseudomonas aeruginosa* | 27 | 6.69 | 160 | 66.0% |
-| *Klebsiella pneumoniae* | 26 | 5.55 | 118 | 57.2% |
-| *Acinetobacter baumannii* | 29 | 4.20 | 288 | 39.3% |
 | *Enterococcus faecium* | 29 | 2.86 | 563 | 38.2% |
 | *Staphylococcus aureus* | 27 | 2.78 | 53 | 32.7% |
+| *Klebsiella pneumoniae* | 26 | 5.55 | 118 | 57.2% |
+| *Acinetobacter baumannii* | 29 | 4.20 | 288 | 39.3% |
+| *Pseudomonas aeruginosa* | 27 | 6.69 | 160 | 66.0% |
 
 La variabilidad de GC entre especies (32.7%–66.0%) es una señal biológica real que los k-meros capturarán naturalmente.
 
@@ -160,9 +177,10 @@ No se identificó leakage. Las features (k-meros del FASTA) y el target (`resist
 ## Decisiones derivadas
 
 - [x] **Dimensión de embedding del antibiótico: 49** → `min(50, (96 // 2) + 1)`
-- [ ] **Duplicados**: conservar primer registro (pendiente confirmar en `data_pipeline.py`)
-- [ ] **Enterobacter ausente**: investigar si taxon_id=547 captura los datos en BV-BRC
-- [ ] **Filtro de longitud mínima**: descartar genomas < 0.5 Mb en el pipeline
+- [x] **Filtrado técnico**: Limitar el dataset únicamente a registros con `laboratory_typing_method == 'Broth dilution'`.
+- [x] **Duplicados**: Se conserva el primer registro usando `drop_duplicates(keep='first')` en `data_pipeline.py`.
+- [ ] **Enterobacter ausente**: Investigar por qué `taxon_id=547` devuelve 0 registros en BV-BRC (posiblemente requiere especificar especies individuales como *E. cloacae*).
+- [x] **Filtro de longitud mínima**: Se descartan genomas < 0.5 Mb en el pipeline (`MIN_GENOME_LENGTH = 500_000`).
 
 ---
 

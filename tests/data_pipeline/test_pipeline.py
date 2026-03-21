@@ -25,11 +25,11 @@ def _write_fasta(path, n_bases: int = 500_000) -> None:
 def _make_labels_csv(path, genome_ids: list[str]) -> None:
     """Escribe un CSV de etiquetas alternando Resistant/Susceptible por posición de genoma."""
     rows = [
-        (gid, "amikacin", "Resistant" if i % 2 == 0 else "Susceptible")
+        (gid, "amikacin", "Resistant" if i % 2 == 0 else "Susceptible", "Broth dilution")
         for i, gid in enumerate(genome_ids)
     ]
     pandas.DataFrame(
-        rows, columns=["genome_id", "antibiotic", "resistant_phenotype"]
+        rows, columns=["genome_id", "antibiotic", "resistant_phenotype", "laboratory_typing_method"]
     ).to_csv(path, index=False)
 
 

@@ -6,7 +6,6 @@ Tests de data_pipeline/cleaning.py:
     - GenomeFilter: filtro por FASTA faltante, filtro por genoma corto, paso de genomas válidos
 """
 
-import textwrap
 from pathlib import Path
 
 import pandas
@@ -18,9 +17,18 @@ from data_pipeline.cleaning import GenomeFilter, LabelCleaner
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _write_labels(path: Path, rows: list[tuple[str, str, str]]) -> None:
+def _write_labels(path: Path, rows: list) -> None:
     """Escribe un CSV mínimo de etiquetas AMR."""
-    df = pandas.DataFrame(rows, columns=["genome_id", "antibiotic", "resistant_phenotype"])
+    new_rows = []
+    for row in rows:
+        if len(row) == 3:
+            new_rows.append((*row, "Broth dilution"))
+        else:
+            new_rows.append(row)
+    
+    df = pandas.DataFrame(new_rows, columns=[
+        "genome_id", "antibiotic", "resistant_phenotype", "laboratory_typing_method"
+    ])
     df.to_csv(path, index=False)
 
 
@@ -30,6 +38,20 @@ def _write_fasta(path: Path, sequence: str = "ACGT" * 125_000) -> None:
 
 
 # ── LabelCleaner ───────────────────────────────────────────────────────────────
+
+
+def test_label_cleaner_filters_by_typing_method(tmp_path):
+    csv = tmp_path / "labels.csv"
+    _write_labels(csv, [
+        ("1.1", "amikacin", "Resistant", "Broth dilution"),
+        ("1.2", "amikacin", "Resistant", "Disk diffusion"),  # se elimina
+        ("1.3", "amikacin", "Resistant", None),             # se elimina
+    ])
+
+    result = LabelCleaner(csv).clean()
+
+    assert len(result) == 1
+    assert result.iloc[0]["genome_id"] == "1.1"
 
 
 def test_label_cleaner_removes_contradictory_pairs(tmp_path):

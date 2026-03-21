@@ -91,6 +91,12 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 
 ## Changelog
 
+### 2026-03-20
+
+#### Documentación: comandos CLI del data pipeline
+- `docs/3_data_pipeline.md`: agregada sección `#### Comandos CLI` bajo el paso 2 con `export-contradictions-cmd`
+- `docs/3_data_pipeline.md`: agregada sección "Ejecutar el pipeline completo" con `prepare-data`, incluyendo variante de rutas por defecto, rutas personalizadas y lista de outputs generados
+
 ### 2026-03-19
 
 #### Mejora al data pipeline: registro de genomas descartados

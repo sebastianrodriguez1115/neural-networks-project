@@ -98,6 +98,9 @@ def run_eda(labels_path: Path, top_n: int = 20, genomes_dir: Path | None = None)
     _print_section("OUTLIERS")
     _print_outliers(dataframe)
 
+    _print_section("MÉTODOS DE LABORATORIO (TYPING METHOD)")
+    _print_typing_method_analysis(dataframe)
+
     _print_section("BASELINE BENCHMARK")
     _print_baseline_benchmark(dataframe)
 
@@ -239,6 +242,23 @@ def _print_outliers(dataframe: pandas.DataFrame) -> None:
         .sum()
     )
     print(f"\n  Pares (genome_id, antibiotic) con etiquetas contradictorias: {conflicts:,}")
+
+
+def _print_typing_method_analysis(dataframe: pandas.DataFrame) -> None:
+    total = len(dataframe)
+    counts = dataframe["laboratory_typing_method"].value_counts(dropna=False)
+
+    header = f"  {'Método de laboratorio':<35} {'Registros':>10} {'%':>7}"
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+
+    for method, count in counts.items():
+        # Representación legible para nulos
+        method_str = "Nulo (No especificado)" if pandas.isna(method) else str(method)
+        print(f"  {method_str:<35} {count:>10,} {count / total * 100:>6.1f}%")
+
+    print("\n  → El equipo recomienda filtrar y concentrar el análisis en 'Broth dilution'")
+    print("    por ser el estándar de oro (gold standard) para MIC.")
 
 
 def _print_baseline_benchmark(dataframe: pandas.DataFrame) -> None:

@@ -16,17 +16,20 @@ class LabelCleaner:
         self._labels_path = Path(labels_path)
         self._dataframe: pandas.DataFrame | None = None
         self._n_initial = 0
+        self._n_typing_method_removed = 0
         self._n_contradictory_pairs = 0
         self._n_contradictory_rows = 0
         self._n_duplicates_removed = 0
 
     def clean(self) -> pandas.DataFrame:
         self._load()
+        self._filter_by_typing_method()
         self._remove_contradictory_pairs()
         self._deduplicate()
         logger.info(
             f"Cleaning complete: {self._n_initial} → {len(self._dataframe)} records "
-            f"({self._n_contradictory_pairs} contradictory pairs / "
+            f"({self._n_typing_method_removed} non-broth dilution removed, "
+            f"{self._n_contradictory_pairs} contradictory pairs / "
             f"{self._n_contradictory_rows} rows removed, "
             f"{self._n_duplicates_removed} consistent duplicates removed)"
         )
@@ -38,6 +41,15 @@ class LabelCleaner:
         )
         self._n_initial = len(self._dataframe)
         logger.info(f"Labels loaded: {self._n_initial} records")
+
+    def _filter_by_typing_method(self) -> None:
+        before = len(self._dataframe)
+        # Solo conservamos 'Broth dilution' (gold standard para MIC)
+        self._dataframe = self._dataframe[
+            self._dataframe["laboratory_typing_method"] == "Broth dilution"
+        ].reset_index(drop=True)
+        self._n_typing_method_removed = before - len(self._dataframe)
+        logger.info(f"Typing method filter: {self._n_typing_method_removed} non-broth dilution records removed")
 
     def _remove_contradictory_pairs(self) -> None:
         phenotype_counts = (
