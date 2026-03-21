@@ -20,7 +20,7 @@ from data_pipeline.features import (
     normalize_features,
     split_genomes,
 )
-from data_pipeline.constants import TOTAL_KMER_DIM, BIGRU_PAD_DIM
+from data_pipeline.constants import BIGRU_PAD_DIM, KMER_DIMS, KMER_SIZES, TOTAL_KMER_DIM, TRAIN_RATIO
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ def test_kmer_extractor_bigru_matrix_shape(tmp_path):
     vec = extractor.to_mlp_vector()
     matrix = mlp_vector_to_bigru_matrix(vec)
 
-    assert matrix.shape == (BIGRU_PAD_DIM, 3)
+    assert matrix.shape == (BIGRU_PAD_DIM, len(KMER_SIZES))
 
 
 def test_kmer_extractor_counts_are_non_negative(tmp_path):
@@ -157,19 +157,19 @@ def test_mlp_vector_to_bigru_matrix_shape():
     vec = numpy.zeros(TOTAL_KMER_DIM)
     matrix = mlp_vector_to_bigru_matrix(vec)
 
-    assert matrix.shape == (BIGRU_PAD_DIM, 3)
+    assert matrix.shape == (BIGRU_PAD_DIM, len(KMER_SIZES))
 
 
 def test_mlp_vector_to_bigru_matrix_padded_positions_are_zero():
     vec = numpy.ones(TOTAL_KMER_DIM)
     matrix = mlp_vector_to_bigru_matrix(vec)
 
-    # histograma k=3: 64 dims rellenas a 1024 — posiciones 64..1023 en col 0 deben ser 0
-    assert matrix[64, 0] == pytest.approx(0.0)
-    # histograma k=4: 256 dims rellenas a 1024 — posiciones 256..1023 en col 1 deben ser 0
-    assert matrix[256, 1] == pytest.approx(0.0)
-    # histograma k=5: 1024 dims exactas — sin relleno en col 2
-    assert matrix[1023, 2] == pytest.approx(1.0)
+    # histograma k=3: KMER_DIMS[0] dims rellenas a BIGRU_PAD_DIM — posiciones [KMER_DIMS[0]..] en col 0 deben ser 0
+    assert matrix[KMER_DIMS[0], 0] == pytest.approx(0.0)
+    # histograma k=4: KMER_DIMS[1] dims rellenas a BIGRU_PAD_DIM — posiciones [KMER_DIMS[1]..] en col 1 deben ser 0
+    assert matrix[KMER_DIMS[1], 1] == pytest.approx(0.0)
+    # histograma k=5: KMER_DIMS[2] dims exactas (== BIGRU_PAD_DIM) — sin relleno en col 2
+    assert matrix[BIGRU_PAD_DIM - 1, 2] == pytest.approx(1.0)
 
 
 # ── split_genomes ──────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ def test_split_genomes_approximate_train_ratio():
 
     total = len(splits)
     train_count = (splits["split"] == "train").sum()
-    assert train_count / total == pytest.approx(0.70, abs=0.10)
+    assert train_count / total == pytest.approx(TRAIN_RATIO, abs=0.10)
 
 
 def test_split_genomes_has_train_val_test():

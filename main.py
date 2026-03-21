@@ -189,6 +189,11 @@ def prepare_data(
         Path("data/processed"),
         help="Directorio donde guardar los outputs del pipeline.",
     ),
+    n_jobs: int = typer.Option(
+        1,
+        help="Número de procesos paralelos para extracción de k-meros. "
+             "Usa -1 para el 80% de los CPUs disponibles.",
+    ),
 ):
     """
     Ejecuta el pipeline completo de preprocesamiento:
@@ -208,7 +213,7 @@ def prepare_data(
         typer.echo(f"Error: no se encontró el directorio de genomas: {fasta_dir}", err=True)
         raise typer.Exit(code=1)
 
-    run_pipeline(labels_path=labels, fasta_dir=fasta_dir, output_dir=output_dir)
+    run_pipeline(labels_path=labels, fasta_dir=fasta_dir, output_dir=output_dir, n_jobs=n_jobs)
     typer.echo("Pipeline completado.")
 
 

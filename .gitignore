@@ -8,4 +8,4 @@
 **/*.npy
 *.egg-info/
 **/__pycache__/
-
+**/discarded_genomes.csv

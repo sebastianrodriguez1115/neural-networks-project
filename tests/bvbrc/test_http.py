@@ -13,6 +13,7 @@ import requests
 
 from bvbrc._http import (
     MAX_RETRIES,
+    REQUEST_TIMEOUT,
     make_api_request_with_retries,
     parse_total_records_from_content_range,
 )
@@ -65,7 +66,7 @@ def test_passes_url_and_headers_to_requests_get():
     with patch("bvbrc._http.requests.get", return_value=mock_response) as mock_get:
         make_api_request_with_retries(url=test_url, headers=test_headers)
 
-    mock_get.assert_called_once_with(test_url, headers=test_headers, timeout=120)
+    mock_get.assert_called_once_with(test_url, headers=test_headers, timeout=REQUEST_TIMEOUT)
 
 
 @patch("bvbrc._http.time.sleep")

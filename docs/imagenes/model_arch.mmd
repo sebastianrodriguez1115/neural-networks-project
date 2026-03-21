@@ -1,0 +1,15 @@
+graph TD
+    GIn["Genomic Input<br/>(batch, 1344)"]
+    AIn["Antibiotic Input<br/>(batch)"]
+    Emb["Embedding Layer<br/>(n_antibiotics, 49)"]
+    Cat["Concatenate<br/>(batch, 1393)"]
+    L1["Linear(1393 -> 512)<br/>ReLU + Dropout(0.3)"]
+    L2["Linear(512 -> 128)<br/>ReLU + Dropout(0.3)"]
+    L3["Linear(128 -> 1)<br/>Logits (No Sigmoid)"]
+
+    GIn --> Cat
+    AIn --> Emb
+    Emb --> Cat
+    Cat --> L1
+    L1 --> L2
+    L2 --> L3

@@ -7,12 +7,25 @@
 - Antibiótico como índice entero → embedding aprendido (dim TBD)
 
 **Arquitectura:**
+```mermaid
+graph TD
+    GIn["Genomic Input<br/>(1344)"]
+    AIn["Antibiotic Index"]
+    Emb["Antibiotic Embedding"]
+    Cat["Concatenate"]
+    L1["Dense(512, ReLU)<br/>+ Dropout"]
+    L2["Dense(128, ReLU)<br/>+ Dropout"]
+    L3["Dense(1, Sigmoid)"]
+
+    GIn --> Cat
+    AIn --> Emb
+    Emb --> Cat
+    Cat --> L1
+    L1 --> L2
+    L2 --> L3
 ```
-Input genómico (1344)  ──┐
-                          Concat → Dense (512, ReLU) + Dropout
-Antibiotic embedding  ───┘       → Dense (128, ReLU) + Dropout
-                                 → Dense (1, Sigmoid)
-```
+
+![Arquitectura MLP](imagenes/model_architecture.png)
 
 **Función de pérdida:** Binary Cross-Entropy
 **Optimizador:** Adam
@@ -29,11 +42,27 @@ Antibiotic embedding  ───┘       → Dense (128, ReLU) + Dropout
 - Antibiótico como índice entero → embedding aprendido (dim TBD)
 
 **Arquitectura:**
+```mermaid
+graph TD
+    GIn["Genomic Input<br/>[batch, 1024, 3]"]
+    AIn["Antibiotic Index"]
+    Emb["Antibiotic Embedding"]
+    RNN["BiGRU<br/>(hidden=128)"]
+    Att["Attention"]
+    Cat["Concatenate"]
+    L1["Dense(TBD, ReLU)<br/>+ Dropout"]
+    L2["Dense(1, Sigmoid)"]
+
+    GIn --> RNN
+    RNN --> Att
+    Att --> Cat
+    AIn --> Emb
+    Emb --> Cat
+    Cat --> L1
+    L1 --> L2
 ```
-Input genómico [batch, 1024, 3]  → BiGRU (hidden=128)  → Attention → context [batch, 256]  ──┐
-                                                                                                Concat → Dense (TBD, ReLU) + Dropout → Dense (1, Sigmoid)
-Antibiotic embedding             ──────────────────────────────────────────────────────────────┘
-```
+
+![Arquitectura BiRNN Variante A](imagenes/birnn_a_arch.png)
 
 ### Variante B — secuencia ordenada (extensión futura)
 
@@ -42,14 +71,30 @@ Antibiotic embedding             ───────────────�
 - Antibiótico como índice entero → embedding aprendido (dim TBD)
 
 **Arquitectura:**
+```mermaid
+graph TD
+    GIn["Sequence Indices<br/>[batch, seq_len]"]
+    AIn["Antibiotic Index"]
+    EmbA["Antibiotic Embedding"]
+    EmbG["Genomic Embedding<br/>(vocab=1024, dim=TBD)"]
+    RNN["BiGRU / BiLSTM<br/>(hidden=TBD)"]
+    Att["Attention"]
+    Cat["Concatenate"]
+    L1["Dense"]
+    L2["Dense(1, Sigmoid)"]
+
+    GIn --> EmbG
+    EmbG --> RNN
+    RNN --> Att
+    Att --> Cat
+    AIn --> EmbA
+    EmbA --> Cat
+    Cat --> L1
+    L1 --> L2
 ```
-Input: secuencia de índices [batch, seq_len]
-  → Embedding (vocab=1024, dim=TBD)    [batch, seq_len, embed_dim]
-  → BiGRU o BiLSTM (hidden=TBD)       [batch, seq_len, hidden*2]
-  → Attention                          [batch, hidden*2]     ──┐
-                                                                Concat → Dense → Dense (1, Sigmoid)
-Antibiotic embedding ───────────────────────────────────────────┘
-```
+
+![Arquitectura BiRNN Variante B](imagenes/birnn_b_arch.png)
+
 *Requiere decidir longitud máxima de secuencia (ver doc 2, Variante B)*
 
 **Función de pérdida:** Binary Cross-Entropy

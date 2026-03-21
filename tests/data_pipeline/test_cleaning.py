@@ -12,6 +12,9 @@ import pandas
 import pytest
 
 from data_pipeline.cleaning import GenomeFilter, LabelCleaner
+from data_pipeline.constants import MIN_GENOME_LENGTH
+
+_ACGT_PATTERN = "ACGT"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -32,8 +35,8 @@ def _write_labels(path: Path, rows: list) -> None:
     df.to_csv(path, index=False)
 
 
-def _write_fasta(path: Path, sequence: str = "ACGT" * 125_000) -> None:
-    """Escribe un archivo FASTA. La secuencia por defecto es 500 000 pb (supera MIN_GENOME_LENGTH)."""
+def _write_fasta(path: Path, sequence: str = _ACGT_PATTERN * (MIN_GENOME_LENGTH // len(_ACGT_PATTERN))) -> None:
+    """Escribe un archivo FASTA. La secuencia por defecto supera MIN_GENOME_LENGTH."""
     path.write_text(f">contig1\n{sequence}\n")
 
 
@@ -131,7 +134,7 @@ def test_genome_filter_excludes_short_genomes(tmp_path):
     fasta_dir.mkdir()
     _write_fasta(fasta_dir / "short.fna", sequence="ACGT" * 10)  # 40 pb — demasiado corto
 
-    valid = GenomeFilter(fasta_dir, min_length=500_000).filter(["short"])
+    valid = GenomeFilter(fasta_dir, min_length=MIN_GENOME_LENGTH).filter(["short"])
 
     assert "short" not in valid
 
@@ -152,6 +155,6 @@ def test_genome_filter_handles_mixed_batch(tmp_path):
     _write_fasta(fasta_dir / "good.fna")
     _write_fasta(fasta_dir / "short.fna", sequence="ACGT")
 
-    valid = GenomeFilter(fasta_dir, min_length=500_000).filter(["good", "short", "missing"])
+    valid = GenomeFilter(fasta_dir, min_length=MIN_GENOME_LENGTH).filter(["good", "short", "missing"])
 
     assert valid == {"good"}

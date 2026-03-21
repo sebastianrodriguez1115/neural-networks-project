@@ -75,6 +75,11 @@ uv run python main.py prepare-data \
     --labels data/processed/amr_labels.csv \
     --fasta-dir data/raw/fasta \
     --output-dir data/processed
+
+# Extracción de k-meros en paralelo (todos los CPUs):
+uv run python main.py prepare-data --n-jobs -1
+# N procesos específicos:
+uv run python main.py prepare-data --n-jobs 4
 ```
 
 El comando genera en `output_dir`:

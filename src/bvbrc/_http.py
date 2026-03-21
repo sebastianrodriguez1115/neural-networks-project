@@ -26,6 +26,9 @@ PAGE_SIZE = 25000
 # Número de reintentos ante errores HTTP transitorios (timeouts, 5xx).
 MAX_RETRIES = 3
 
+# Timeout en segundos para cada request HTTP individual.
+REQUEST_TIMEOUT = 120
+
 
 def make_api_request_with_retries(url: str, headers: dict) -> requests.Response:
     """
@@ -38,7 +41,7 @@ def make_api_request_with_retries(url: str, headers: dict) -> requests.Response:
 
     for attempt in range(MAX_RETRIES):
         try:
-            response = requests.get(url, headers=headers, timeout=120)
+            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
             response.raise_for_status()
             return response
 

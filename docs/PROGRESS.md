@@ -93,6 +93,24 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 
 ### 2026-03-20
 
+#### Plan de implementación MLP
+- Creado `docs/6_implementation_plan.md` con plan detallado para Fase 2 y 3: `AMRDataset`, `AMRMLP`, loop de entrenamiento, CLI, tests y decisiones de diseño consolidadas
+- Decisiones clave registradas: pre-carga de vectores en RAM, device agnostic en training loop, `pos_weight` dinámico desde `train_stats.json`, threshold óptimo en `evaluate()`, estructura de outputs en `results/mlp/`
+
+#### Paralelización de extracción de k-meros
+- `src/data_pipeline/pipeline.py`: nueva función top-level `_extract_single_genome` (picklable); `_extract_kmers` acepta `n_jobs` con validación; `n_jobs=-1` usa 80% de CPUs (`max(1, int(cpu_count * 0.8))`); modo paralelo usa `as_completed` para logging en tiempo real desde el proceso principal
+- `run_pipeline()`: propaga `n_jobs`
+- `main.py`: opción `--n-jobs` en `prepare-data`
+- `docs/3_data_pipeline.md`: ejemplos `--n-jobs -1` y `--n-jobs 4`
+- 3 tests nuevos en `test_pipeline.py`: unit del helper, equivalencia secuencial vs paralelo (bit-idéntico), smoke test `n_jobs=-1`
+
+#### Limpieza de magic numbers en tests
+- `tests/data_pipeline/test_pipeline.py`: constantes `_N_GENOMES`, `_ACGT_PATTERN`, imports de `MIN_GENOME_LENGTH`, `TOTAL_KMER_DIM`, `BIGRU_PAD_DIM`, `KMER_SIZES`
+- `tests/data_pipeline/test_features.py`: imports de `KMER_DIMS`, `KMER_SIZES`, `TRAIN_RATIO`; `64`/`256`/`1023` → `KMER_DIMS[0]`/`KMER_DIMS[1]`/`BIGRU_PAD_DIM-1`; `0.70` → `TRAIN_RATIO`; `(BIGRU_PAD_DIM, 3)` → `(BIGRU_PAD_DIM, len(KMER_SIZES))`
+- `tests/data_pipeline/test_cleaning.py`: `"ACGT" * 125_000` y `500_000` → `MIN_GENOME_LENGTH`
+- `tests/bvbrc/test_http.py`: `timeout=120` → `REQUEST_TIMEOUT`
+- `src/bvbrc/_http.py`: extraído `REQUEST_TIMEOUT = 120` como constante exportada
+
 #### Documentación: comandos CLI del data pipeline
 - `docs/3_data_pipeline.md`: agregada sección `#### Comandos CLI` bajo el paso 2 con `export-contradictions-cmd`
 - `docs/3_data_pipeline.md`: agregada sección "Ejecutar el pipeline completo" con `prepare-data`, incluyendo variante de rutas por defecto, rutas personalizadas y lista de outputs generados

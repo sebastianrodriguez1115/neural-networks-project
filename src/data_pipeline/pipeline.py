@@ -1,4 +1,7 @@
+import concurrent.futures
 import logging
+import os
+from functools import partial
 from pathlib import Path
 
 import numpy
@@ -90,16 +93,42 @@ def _split_genomes(
     return splits, train_ids
 
 
-def _extract_kmers(genome_ids: list[str], fasta_dir: Path) -> dict[str, numpy.ndarray]:
+def _extract_single_genome(genome_id: str, fasta_dir: Path) -> tuple[str, numpy.ndarray]:
+    """Extrae k-meros de un solo genoma. Función de nivel módulo para poder ser picklada."""
+    extractor = KmerExtractor(fasta_dir / f"{genome_id}.fna")
+    extractor.extract()
+    return genome_id, extractor.to_mlp_vector()
+
+
+def _extract_kmers(
+    genome_ids: list[str],
+    fasta_dir: Path,
+    n_jobs: int = 1,
+) -> dict[str, numpy.ndarray]:
     logger.info("Step 4: K-mer extraction")
-    mlp_vectors: dict[str, numpy.ndarray] = {}
-    for i, genome_id in enumerate(genome_ids):
-        fasta_path = fasta_dir / f"{genome_id}.fna"
-        logger.info(f"[{i + 1}/{len(genome_ids)}] Extracting k-mers: {genome_id}")
-        extractor = KmerExtractor(fasta_path)
-        extractor.extract()
-        mlp_vectors[genome_id] = extractor.to_mlp_vector()
-    return mlp_vectors
+    if n_jobs == 0 or n_jobs < -1:
+        raise ValueError(f"n_jobs debe ser >= 1 o -1 (80% de los CPUs), recibido: {n_jobs}")
+
+    worker = partial(_extract_single_genome, fasta_dir=fasta_dir)
+
+    if n_jobs == 1:
+        mlp_vectors: dict[str, numpy.ndarray] = {}
+        for i, (genome_id, vector) in enumerate(map(worker, genome_ids)):
+            logger.info(f"[{i + 1}/{len(genome_ids)}] Extracting k-mers: {genome_id}")
+            mlp_vectors[genome_id] = vector
+        return mlp_vectors
+
+    workers = max(1, int(os.cpu_count() * 0.8)) if n_jobs == -1 else n_jobs
+    total = len(genome_ids)
+    logger.info(f"Parallel k-mer extraction: {total} genomes, {workers} workers")
+    results = []
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(worker, gid): gid for gid in genome_ids}
+        for i, future in enumerate(concurrent.futures.as_completed(futures)):
+            genome_id, vector = future.result()
+            results.append((genome_id, vector))
+            logger.info(f"[{i + 1}/{total}] K-mers extracted: {genome_id}")
+    return dict(results)
 
 
 def _normalize_and_save(
@@ -131,8 +160,14 @@ def run_pipeline(
     labels_path: Path,
     fasta_dir: Path,
     output_dir: Path,
+    n_jobs: int = 1,
 ) -> None:
-    """Ejecuta el pipeline completo de preprocesamiento de datos."""
+    """Ejecuta el pipeline completo de preprocesamiento de datos.
+
+    Args:
+        n_jobs: Procesos paralelos para extracción de k-meros.
+                1=secuencial (defecto), -1=80% de los CPUs disponibles.
+    """
     labels_path = Path(labels_path)
     fasta_dir = Path(fasta_dir)
     output_dir = Path(output_dir)
@@ -143,7 +178,7 @@ def run_pipeline(
     _save_antibiotic_index(cleaned, output_dir)
     _, train_ids = _split_genomes(cleaned, output_dir)
     genome_list = sorted(cleaned["genome_id"].unique())
-    mlp_vectors = _extract_kmers(genome_list, fasta_dir)
+    mlp_vectors = _extract_kmers(genome_list, fasta_dir, n_jobs=n_jobs)
     _normalize_and_save(mlp_vectors, train_ids, genome_list, output_dir)
 
     logger.info(

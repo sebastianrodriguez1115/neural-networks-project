@@ -10,15 +10,22 @@ import numpy
 import pandas
 import pytest
 
-from data_pipeline.pipeline import run_pipeline
+from data_pipeline.constants import BIGRU_PAD_DIM, KMER_SIZES, MIN_GENOME_LENGTH, TOTAL_KMER_DIM
+from data_pipeline.pipeline import _extract_single_genome, run_pipeline
+
+# Mínimo de genomas para que split_genomes() funcione con estratificación 70/15/15.
+# Con menos genomas, algún split queda sin representantes de las dos clases.
+_N_GENOMES = 20
+
+_ACGT_PATTERN = "ACGT"
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
-def _write_fasta(path, n_bases: int = 500_000) -> None:
+def _write_fasta(path, n_bases: int = MIN_GENOME_LENGTH) -> None:
     """Escribe un archivo FASTA con n_bases pb (el valor por defecto supera MIN_GENOME_LENGTH)."""
-    sequence = ("ACGT" * (n_bases // 4 + 1))[:n_bases]
+    sequence = (_ACGT_PATTERN * (n_bases // len(_ACGT_PATTERN) + 1))[:n_bases]
     path.write_text(f">contig1\n{sequence}\n")
 
 
@@ -42,7 +49,7 @@ def pipeline_output(tmp_path_factory):
     Usa scope de módulo para no ejecutar el pipeline costoso 6 veces.
     """
     tmp_path = tmp_path_factory.mktemp("pipeline")
-    genome_ids = [f"1.{i}" for i in range(1, 21)]
+    genome_ids = [f"1.{i}" for i in range(1, _N_GENOMES + 1)]
     fasta_dir = tmp_path / "fastas"
     fasta_dir.mkdir()
     for gid in genome_ids:
@@ -80,7 +87,7 @@ def test_run_pipeline_saves_mlp_features_per_genome(pipeline_output):
     mlp_dir = output_dir / "mlp"
     for gid in genome_ids:
         vec = numpy.load(mlp_dir / f"{gid}.npy")
-        assert vec.shape == (1344,)
+        assert vec.shape == (TOTAL_KMER_DIM,)
 
 
 def test_run_pipeline_saves_bigru_features_per_genome(pipeline_output):
@@ -88,10 +95,63 @@ def test_run_pipeline_saves_bigru_features_per_genome(pipeline_output):
     bigru_dir = output_dir / "bigru"
     for gid in genome_ids:
         matrix = numpy.load(bigru_dir / f"{gid}.npy")
-        assert matrix.shape == (1024, 3)
+        assert matrix.shape == (BIGRU_PAD_DIM, len(KMER_SIZES))
 
 
 def test_run_pipeline_saves_normalization_stats(pipeline_output):
     output_dir, _ = pipeline_output
     assert (output_dir / "mlp_mean.npy").exists()
     assert (output_dir / "mlp_std.npy").exists()
+
+
+# ── Paralelización ─────────────────────────────────────────────────────────────
+
+
+def test_extract_single_genome(tmp_path):
+    """Verifica que el helper de nivel módulo retorna el genome_id y un vector 1344-dim."""
+    gid = "test.1"
+    _write_fasta(tmp_path / f"{gid}.fna")
+
+    result_gid, vector = _extract_single_genome(gid, tmp_path)
+
+    assert result_gid == gid
+    assert vector.shape == (TOTAL_KMER_DIM,)
+    assert vector.sum() > 0
+
+
+def test_parallel_matches_sequential(tmp_path):
+    """Verifica que n_jobs=2 produce vectores bit-idénticos a n_jobs=1."""
+    genome_ids = [f"2.{i}" for i in range(1, _N_GENOMES + 1)]
+    fasta_dir = tmp_path / "fastas"
+    fasta_dir.mkdir()
+    for gid in genome_ids:
+        _write_fasta(fasta_dir / f"{gid}.fna")
+    labels_path = tmp_path / "labels.csv"
+    _make_labels_csv(labels_path, genome_ids)
+
+    out_seq = tmp_path / "out_seq"
+    out_par = tmp_path / "out_par"
+    run_pipeline(labels_path, fasta_dir, out_seq, n_jobs=1)
+    run_pipeline(labels_path, fasta_dir, out_par, n_jobs=2)
+
+    for gid in genome_ids:
+        seq_vec = numpy.load(out_seq / "mlp" / f"{gid}.npy")
+        par_vec = numpy.load(out_par / "mlp" / f"{gid}.npy")
+        numpy.testing.assert_array_equal(seq_vec, par_vec)
+
+
+def test_parallel_n_jobs_minus1_completes(tmp_path):
+    """Verifica que n_jobs=-1 (todos los CPUs) completa sin error."""
+    genome_ids = [f"3.{i}" for i in range(1, _N_GENOMES + 1)]
+    fasta_dir = tmp_path / "fastas"
+    fasta_dir.mkdir()
+    for gid in genome_ids:
+        _write_fasta(fasta_dir / f"{gid}.fna")
+    labels_path = tmp_path / "labels.csv"
+    _make_labels_csv(labels_path, genome_ids)
+    output_dir = tmp_path / "output"
+
+    run_pipeline(labels_path, fasta_dir, output_dir, n_jobs=-1)
+
+    assert (output_dir / "mlp").is_dir()
+    assert (output_dir / "bigru").is_dir()
