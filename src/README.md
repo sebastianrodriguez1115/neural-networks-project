@@ -17,9 +17,14 @@ src/
 │   ├── features.py
 │   └── pipeline.py
 │
+├── train/
+│   ├── __init__.py
+│   ├── evaluate.py
+│   └── loop.py
+│
+├── dataset.py
 ├── eda.py
-├── models.py
-└── train.py
+└── mlp_model.py
 ```
 
 ## Módulos
@@ -45,14 +50,20 @@ Transforma el CSV crudo de etiquetas + archivos FASTA en features `.npy` listos 
 
 `run_eda()` imprime un reporte completo en consola: resumen general, distribución por especie, balance de clases, ranking de antibióticos, calidad de datos, outliers, baseline benchmark (majority class F1=0.7366) y análisis genómico opcional. `export_contradictions()` exporta pares con etiquetas contradictorias a CSV.
 
-### `models.py` — Arquitecturas de redes neuronales *(pendiente)*
+### `dataset.py` — Dataset de PyTorch
 
-- **MLP:** input genómico (1344) + antibiotic embedding (dim=49) → Dense(512, ReLU) + Dropout → Dense(128, ReLU) + Dropout → Dense(1)
-- **BiGRU + Attention (Var A):** input [batch, 1024, 3] → BiGRU(hidden=128) → Bahdanau attention → context [batch, 256] + antibiotic embedding → Dense → Dense(1)
+`AMRDataset(Dataset)`: pre-carga vectores genómicos `.npy` en RAM durante `__init__`. Cada muestra devuelve `(genome_vector, antibiotic_idx, label)`. Expone `load_pos_weight()` para leer `pos_weight` desde `train_stats.json`.
 
-### `train.py` — Entrenamiento y evaluación *(pendiente)*
+### `mlp_model.py` — Perceptrón Multicapa
 
-Loop de entrenamiento con Adam (lr=0.001), `BCEWithLogitsLoss` con `pos_weight`, early stopping (patience=10 sobre pérdida de validación). Métricas por epoch: loss train/val, accuracy, precision, recall, F1, AUC-ROC.
+`AMRMLP(nn.Module)`: Concat(genome[1344], antibiotic_emb[49]) → Linear(1393, 512) + ReLU + Dropout(0.3) → Linear(512, 128) + ReLU + Dropout(0.3) → Linear(128, 1). Salida: logit sin sigmoid. Factory method `from_antibiotic_index()` para instanciar desde el CSV del pipeline.
+
+### `train/` — Entrenamiento y evaluación
+
+Paquete con dos módulos:
+
+- **`evaluate.py`** — `collect_predictions()` (inferencia sin gradientes), `compute_metrics()` (accuracy, precision, recall, F1, AUC-ROC desde arrays numpy), `find_optimal_threshold()` (umbral que maximiza F1), y `evaluate()` que compone las tres anteriores.
+- **`loop.py`** — `set_seed()` (reproducibilidad), `detect_device()` (CUDA → MPS → CPU), `train_epoch()` (una pasada forward+backward), y `train()` como orquestador con Adam, early stopping sobre val loss, checkpoint por mejor val F1. Genera: `best_model.pt`, `metrics.json`, `history.csv`, `history.png`.
 
 ## Punto de entrada
 
@@ -65,6 +76,7 @@ El CLI está en `main.py` (raíz del proyecto), no en `src/`. Usa Typer y expone
 | `eda` | `eda` | Análisis exploratorio completo con reporte en consola |
 | `export-contradictions-cmd` | `eda` | Exporta pares con etiquetas contradictorias a CSV |
 | `prepare-data` | `data_pipeline.pipeline` | Pipeline completo: limpieza → filtro → split → k-meros → normalización |
+| `train-mlp` | `train` + `dataset` + `mlp_model` | Entrena el MLP y evalúa sobre test set |
 
 ## Flujo de datos
 

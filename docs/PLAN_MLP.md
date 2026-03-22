@@ -5,10 +5,10 @@
 | Archivo | Acción |
 |---|---|
 | `src/dataset.py` | Nuevo — `AMRDataset` |
-| `src/models.py` | Implementar `AMRMLP` |
-| `src/train.py` | Loop de entrenamiento, métricas, early stopping |
+| `src/mlp_model.py` | Implementar `AMRMLP` |
+| `src/train/` | Paquete: loop de entrenamiento, métricas, early stopping |
 | `main.py` | Agregar comando `train-mlp` |
-| `tests/test_mlp.py` | Tests unitarios |
+| `tests/test_train.py` | Tests unitarios de entrenamiento |
 
 ---
 
@@ -29,7 +29,7 @@ Clase `AMRDataset(torch.utils.data.Dataset)`:
 
 ---
 
-## 2. Modelo (`src/models.py`)
+## 2. Modelo (`src/mlp_model.py`)
 
 Clase `AMRMLP(nn.Module)`:
 
@@ -62,19 +62,21 @@ graph TD
 
 ---
 
-## 3. Entrenamiento (`src/train.py`)
+## 3. Entrenamiento (`src/train/`)
 
-### `set_seed(seed: int)`
+Paquete con lógica de aprendizaje y métricas.
+
+### `loop.py`: `set_seed(seed: int)`
 Configura semillas en `random`, `numpy`, `torch`, `torch.cuda` y `torch.backends.cudnn.deterministic = True` para reproducibilidad completa.
 
-### `train_one_epoch(model, loader, optimizer, criterion, device)`
+### `loop.py`: `train_epoch(model, loader, optimizer, criterion, device)`
 Una pasada por el train set. Devuelve loss promedio.
 
-### `evaluate(model, loader, criterion, device, threshold=0.5)`
+### `evaluate.py`: `evaluate(model, loader, criterion, device, threshold=0.5)`
 Devuelve: loss, accuracy, precision, recall, F1, AUC-ROC.
 Calcula también el threshold óptimo (máximo F1) sobre el conjunto dado — útil en val para no asumir 0.5 con clases desbalanceadas.
 
-### `train(model, train_loader, val_loader, ...)`
+### `loop.py`: `train(model, train_loader, val_loader, ...)`
 - Adam, lr=0.001, max 100 epochs
 - `BCEWithLogitsLoss(pos_weight=...)` — el `pos_weight` se lee de `data/processed/train_stats.json` generado por el pipeline (no hardcodeado)
 - Early stopping: patience=10 sobre **val loss**

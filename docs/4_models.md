@@ -39,7 +39,20 @@ graph TD
 
 **Función de pérdida:** Binary Cross-Entropy
 **Optimizador:** Adam
-**Regularización:** Dropout (tasa TBD), Early Stopping
+**Regularización:** Dropout (tasa 0.3), Early Stopping
+
+#### Comandos CLI
+
+```bash
+# Entrenar MLP con hiperparámetros por defecto:
+uv run python main.py train-mlp
+
+# Personalizar entrenamiento:
+uv run python main.py train-mlp --epochs 50 --batch-size 64 --lr 0.0005 --patience 5
+
+# Especificar rutas de datos y resultados:
+uv run python main.py train-mlp --data-dir data/processed --output-dir results/mlp_exp1
+```
 
 ---
 
@@ -110,6 +123,13 @@ graph TD
 **Función de pérdida:** Binary Cross-Entropy
 **Optimizador:** Adam
 **Regularización:** Dropout, Early Stopping
+
+#### Comandos CLI
+
+```bash
+# Entrenar BiGRU (Próximamente):
+# uv run python main.py train-bigru
+```
 
 ---
 
