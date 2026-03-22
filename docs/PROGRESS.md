@@ -62,9 +62,9 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] Tests unitarios (`tests/test_train.py` y `tests/test_mlp.py`)
 
 ### 2.3 Experimento y reporte
-- [ ] Entrenar y evaluar MLP sobre dataset completo
-- [ ] Métricas en test set: accuracy, precision, recall, F1, AUC-ROC, matriz de confusión
-- [ ] Criterio de éxito: F1 ≥ 0.85 y recall ≥ 0.90 en clase resistente
+- [x] Entrenar y evaluar MLP sobre dataset completo (57088 train / 12613 val / 12519 test, 75 épocas, early stopping)
+- [x] Métricas en test set: accuracy=0.8215, precision=0.8238, recall=0.9031, F1=0.8616, AUC-ROC=0.9098
+- [x] Criterio de éxito: F1=0.8616 ≥ 0.85 ✓ y recall=0.9031 ≥ 0.90 ✓
 - [ ] Reporte de entrega (shallow NN)
 
 ---

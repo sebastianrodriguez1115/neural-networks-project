@@ -1,5 +1,14 @@
 # CHANGELOG
 
+### 2026-03-22
+
+#### Entrenamiento y evaluación del MLP (Fase 2.3)
+- Entrenado MLP sobre dataset completo: 57,088 train / 12,613 val / 12,519 test (782,804 parámetros)
+- Early stopping en época 75 (patience=20), mejor modelo guardado en época 71 (val F1=0.8392)
+- Métricas en test set: F1=0.8616, Recall=0.9031, AUC-ROC=0.9098 — criterio de éxito cumplido
+- Resultados en `results/mlp/`: `best_model.pt`, `metrics.json`, `history.csv`, `history.png`, `OUTPUT.txt`
+- Renombrado `OUTPUT.md` → `OUTPUT.txt` para evitar renderizado incorrecto en GitHub
+
 ### 2026-03-21
 
 #### Implementación de `src/train.py` (Fase 2.2)
