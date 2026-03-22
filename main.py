@@ -9,22 +9,30 @@ Comandos:
     eda                       Análisis exploratorio del dataset de etiquetas AMR
     export-contradictions-cmd Exporta pares con etiquetas contradictorias a CSV
     prepare-data              Preprocesa datos: limpia, extrae k-meros, split, normaliza
+    train-mlp                 Entrena el MLP sobre los datos preprocesados
 
 Uso:
     uv run python main.py --help
     uv run python main.py download-amr
     uv run python main.py eda --labels data/processed/amr_labels.csv
+    uv run python main.py train-mlp
 """
 
 import logging
 from pathlib import Path
 
 import pandas
+import torch
 import typer
+from torch.utils.data import DataLoader
 
 from bvbrc import download_multiple_genomes_fasta, fetch_amr_labels
 from data_pipeline import run_pipeline
+from data_pipeline.constants import RANDOM_SEED
+from dataset import AMRDataset
 from eda import export_contradictions, run_eda
+from mlp_model import AMRMLP
+from train import detect_device, set_seed, train as run_training
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -215,6 +223,80 @@ def prepare_data(
 
     run_pipeline(labels_path=labels, fasta_dir=fasta_dir, output_dir=output_dir, n_jobs=n_jobs)
     typer.echo("Pipeline completado.")
+
+
+@app.command(help="Entrena el MLP (shallow NN) sobre los datos preprocesados y evalúa sobre test set.")
+def train_mlp(
+    data_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio con outputs del pipeline (splits.csv, mlp/, etc.).",
+    ),
+    output_dir: Path = typer.Option(
+        Path("results/mlp"),
+        help="Directorio donde guardar modelo, métricas y gráficas.",
+    ),
+    epochs: int = typer.Option(100, help="Número máximo de épocas."),
+    batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
+    lr: float = typer.Option(0.001, help="Tasa de aprendizaje para Adam."),
+    patience: int = typer.Option(10, help="Épocas sin mejora para early stopping."),
+):
+    """
+    Entrena el Perceptrón Multicapa (AMRMLP) para predicción de AMR.
+
+    Carga los datos preprocesados, construye el modelo, ejecuta el loop
+    de entrenamiento con early stopping, y guarda el mejor modelo junto
+    con métricas y gráficas de convergencia en output-dir.
+    """
+    # Reproducibilidad
+    set_seed(RANDOM_SEED)
+
+    # Detectar dispositivo
+    device = detect_device()
+    typer.echo(f"Dispositivo: {device}")
+
+    # Cargar datasets
+    typer.echo("Cargando datos...")
+    train_ds = AMRDataset(data_dir, split="train")
+    val_ds = AMRDataset(data_dir, split="val")
+    test_ds = AMRDataset(data_dir, split="test")
+    typer.echo(f"Muestras — train: {len(train_ds)}, val: {len(val_ds)}, test: {len(test_ds)}")
+
+    # DataLoaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size)
+    test_loader = DataLoader(test_ds, batch_size=batch_size)
+
+    # Modelo
+    model = AMRMLP.from_antibiotic_index(str(data_dir / "antibiotic_index.csv"))
+    typer.echo(f"Modelo: {sum(p.numel() for p in model.parameters())} parámetros")
+
+    # Función de pérdida con pos_weight para desbalance de clases
+    pos_weight = AMRDataset.load_pos_weight(data_dir)
+    criterion = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([pos_weight], device=device),
+    )
+    typer.echo(f"pos_weight: {pos_weight:.4f}")
+
+    # Entrenar
+    test_metrics = run_training(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        device=device,
+        lr=lr,
+        epochs=epochs,
+        patience=patience,
+        output_dir=output_dir,
+    )
+
+    typer.echo(f"\nResultados en test set:")
+    typer.echo(f"  F1:      {test_metrics['f1']:.4f}")
+    typer.echo(f"  Recall:  {test_metrics['recall']:.4f}")
+    typer.echo(f"  AUC-ROC: {test_metrics['auc_roc']:.4f}")
+    typer.echo(f"  Umbral:  {test_metrics['threshold_used']:.4f}")
+    typer.echo(f"\nGuardado en: {output_dir}")
 
 
 if __name__ == "__main__":

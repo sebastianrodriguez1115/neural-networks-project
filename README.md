@@ -19,11 +19,15 @@ proyecto_redes_neuronales/
 │   │   ├── _http.py      #   Utilidades HTTP compartidas
 │   │   ├── amr.py        #   Etiquetas AMR (genome_amr endpoint)
 │   │   └── genomes.py    #   Genomas FASTA (genome_sequence endpoint)
-│   ├── data_pipeline.py  # Preprocesamiento: etiquetas, k-meros, splits
-│   ├── models.py         # Definición de MLP y BiGRU+Attention
-│   └── train.py          # Loop de entrenamiento y evaluación
+│   ├── data_pipeline/    # Preprocesamiento: etiquetas, k-meros, splits
+│   ├── train/            # Paquete de entrenamiento: loop, evaluate
+│   ├── dataset.py        # AMRDataset — Dataset de PyTorch
+│   ├── mlp_model.py      # AMRMLP — Perceptrón multicapa
+│   ├── eda.py            # Análisis exploratorio
+│   └── main.py           # CLI (Typer) — punto de entrada
 ├── tests/
-│   └── bvbrc/            # Unit tests del paquete bvbrc
+│   ├── bvbrc/            # Tests del cliente BV-BRC
+│   └── data_pipeline/    # Tests del pipeline de datos
 ├── data/
 │   ├── raw/              # Genomas FASTA descargados
 │   └── processed/        # Etiquetas CSV, vectores k-meros (.npy)
@@ -32,8 +36,8 @@ proyecto_redes_neuronales/
 ├── docs/
 │   ├── proposal/         # Propuesta del proyecto
 │   ├── reference/        # Referencia técnica (API, etc.)
-│   ├── usage.md          # Instalación, comandos CLI y tests
+│   ├── PROGRESS.md       # Plan de implementación y estado por fases
+│   ├── CHANGELOG.md      # Registro histórico de cambios
 │   └── 1–5_*.md          # Decisiones de diseño e implementación
-├── docs/PROGRESS.md      # Estado de implementación por fases
-└── docs/PROGRESS.md      # Plan, estado y changelog
+└── main.py               # Punto de entrada CLI
 ```

@@ -18,13 +18,15 @@ proyecto_redes_neuronales/
 ├── src/                  # Código fuente — ver src/README.md para detalle de cada módulo
 │   ├── bvbrc/            # Cliente HTTP para la API REST de BV-BRC
 │   ├── data_pipeline/    # Preprocesamiento: etiquetas, k-meros, splits
+│   ├── train/            # Paquete de entrenamiento: loop.py, evaluate.py
+│   ├── dataset.py        # AMRDataset de PyTorch
 │   ├── eda.py            # Análisis exploratorio (EDA)
-│   ├── models.py         # Definición de MLP y BiGRU+Attention
-│   └── train.py          # Loop de entrenamiento y evaluación
+│   ├── mlp_model.py      # Definición del modelo MLP (a futuro bigru_model.py)
+│   └── main.py           # CLI (Typer) — punto de entrada
 ├── tests/
 │   ├── bvbrc/            # Unit tests del paquete bvbrc
-│   └── data_pipeline/    # Unit tests del data pipeline
-├── data/
+│   ├── data_pipeline/    # Unit tests del data pipeline
+│   └── test_train.py     # Unit tests del paquete de entrenamiento
 │   ├── raw/              # Genomas FASTA descargados
 │   └── processed/        # Etiquetas CSV, vectores k-meros (.npy)
 ├── results/              # Métricas, gráficas, checkpoints
@@ -82,6 +84,8 @@ uv run python main.py --help
 | `download-genomes` | Descarga archivos FASTA de los genomas del CSV de etiquetas | `docs/3_data_pipeline.md` |
 | `eda` | Análisis exploratorio: distribución, balance, outliers, baseline benchmark | `docs/2_eda.md` |
 | `export-contradictions-cmd` | Exporta pares (genome_id, antibiotic) con etiquetas contradictorias a CSV | `docs/2_eda.md` |
+| `prepare-data` | Preprocesamiento completo: limpieza, k-meros, split, normalización | `docs/3_data_pipeline.md` |
+| `train-mlp` | Entrena y evalúa el Perceptrón Multicapa (MLP) | `docs/PLAN_MLP.md` |
 
 ## Tests
 

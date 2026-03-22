@@ -101,7 +101,7 @@ Los nulos están concentrados en `laboratory_typing_method` (14.4%) y `testing_s
 
 **10,383 registros duplicados** (mismo `genome_id` + `antibiotic`). De estos, **488 pares tienen etiquetas contradictorias** (un registro dice Resistant y otro dice Susceptible para el mismo genoma y antibiótico). Esto puede indicar variación experimental o errores de medición.
 
-Estrategia propuesta: conservar el primer registro al eliminar duplicados en `data_pipeline.py`.
+Estrategia propuesta: conservar el primer registro al eliminar duplicados en `src/data_pipeline/cleaning.py`.
 
 ### Genomas con cobertura extrema
 
@@ -178,7 +178,7 @@ No se identificó leakage. Las features (k-meros del FASTA) y el target (`resist
 
 - [x] **Dimensión de embedding del antibiótico: 49** → `min(50, (96 // 2) + 1)`
 - [x] **Filtrado técnico**: Limitar el dataset únicamente a registros con `laboratory_typing_method == 'Broth dilution'`.
-- [x] **Duplicados**: Se conserva el primer registro usando `drop_duplicates(keep='first')` en `data_pipeline.py`.
+- [x] **Duplicados**: Se conserva el primer registro usando `drop_duplicates(keep='first')` en `src/data_pipeline/cleaning.py`.
 - [ ] **Enterobacter ausente**: Investigar por qué `taxon_id=547` devuelve 0 registros en BV-BRC (posiblemente requiere especificar especies individuales como *E. cloacae*).
 - [x] **Filtro de longitud mínima**: Se descartan genomas < 0.5 Mb en el pipeline (`MIN_GENOME_LENGTH = 500_000`).
 
