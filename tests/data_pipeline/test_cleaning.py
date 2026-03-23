@@ -51,7 +51,7 @@ def test_label_cleaner_filters_by_typing_method(tmp_path):
         ("1.3", "amikacin", "Resistant", None),             # se elimina
     ])
 
-    result = LabelCleaner(csv).clean()
+    result = LabelCleaner(csv, min_records_per_antibiotic=1).clean()
 
     assert len(result) == 1
     assert result.iloc[0]["genome_id"] == "1.1"
@@ -65,7 +65,7 @@ def test_label_cleaner_removes_contradictory_pairs(tmp_path):
         ("1.2", "amikacin", "Resistant"),    # limpio — se conserva
     ])
 
-    result = LabelCleaner(csv).clean()
+    result = LabelCleaner(csv, min_records_per_antibiotic=1).clean()
 
     assert len(result) == 1
     assert result.iloc[0]["genome_id"] == "1.2"
@@ -78,7 +78,7 @@ def test_label_cleaner_keeps_consistent_pairs(tmp_path):
         ("1.1", "ampicillin", "Susceptible"),
     ])
 
-    result = LabelCleaner(csv).clean()
+    result = LabelCleaner(csv, min_records_per_antibiotic=1).clean()
 
     assert len(result) == 2
 
@@ -90,7 +90,7 @@ def test_label_cleaner_removes_consistent_duplicates(tmp_path):
         ("1.1", "amikacin", "Resistant"),  # duplicado exacto — uno se elimina
     ])
 
-    result = LabelCleaner(csv).clean()
+    result = LabelCleaner(csv, min_records_per_antibiotic=1).clean()
 
     assert len(result) == 1
 
@@ -102,7 +102,7 @@ def test_label_cleaner_returns_empty_when_all_contradictory(tmp_path):
         ("1.1", "amikacin", "Susceptible"),
     ])
 
-    result = LabelCleaner(csv).clean()
+    result = LabelCleaner(csv, min_records_per_antibiotic=1).clean()
 
     assert len(result) == 0
 
@@ -111,9 +111,29 @@ def test_label_cleaner_casts_genome_id_to_str(tmp_path):
     csv = tmp_path / "labels.csv"
     _write_labels(csv, [("1234567.1", "amikacin", "Resistant")])
 
-    result = LabelCleaner(csv).clean()
+    result = LabelCleaner(csv, min_records_per_antibiotic=1).clean()
 
     assert pandas.api.types.is_string_dtype(result["genome_id"])  # tipo str en pandas
+
+
+def test_label_cleaner_filters_low_frequency_antibiotics(tmp_path):
+    csv = tmp_path / "labels.csv"
+    _write_labels(csv, [
+        ("1.1", "rare_antibiotic", "Resistant"),
+        ("1.2", "rare_antibiotic", "Resistant"),
+        ("2.1", "common_antibiotic", "Resistant"),
+        ("2.2", "common_antibiotic", "Resistant"),
+        ("2.3", "common_antibiotic", "Resistant"),
+    ])
+
+    # Caso 1: Umbral de 3 (debería eliminar rare_antibiotic)
+    result = LabelCleaner(csv, min_records_per_antibiotic=3).clean()
+    assert len(result) == 3
+    assert all(result["antibiotic"] == "common_antibiotic")
+
+    # Caso 2: Umbral de 5 (debería eliminar ambos)
+    result = LabelCleaner(csv, min_records_per_antibiotic=5).clean()
+    assert len(result) == 0
 
 
 # ── GenomeFilter ───────────────────────────────────────────────────────────────
