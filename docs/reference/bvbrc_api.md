@@ -49,9 +49,30 @@ Parámetros especiales:
 | *Pseudomonas aeruginosa* | 287 |
 | *Enterobacter* spp. (género) | 547 |
 
-Para *Enterobacter* a nivel de género usar `taxon_lineage_ids` en lugar de `taxon_id`:
-```
-eq(taxon_lineage_ids,547)
+## Limitación con *Enterobacter spp.* y Posible Solución
+
+Para *Enterobacter* a nivel de género, no se puede usar el `taxon_id=547` directamente en el endpoint de AMR, y el endpoint `/genome_amr/` no soporta la consulta de linaje taxonómico (`taxon_lineage_ids`), devolviendo un error HTTP 400.
+
+Si en el futuro se desea incluir esta especie, el flujo (fix) requerido sería un proceso de dos pasos. A continuación el pseudocódigo:
+
+```python
+# PASO 1: Obtener todos los IDs de genomas del género Enterobacter
+# Endpoint: /genome/
+query_genomes = "eq(taxon_lineage_ids, 547)"
+url_genomes = f"https://www.bv-brc.org/api/genome/?{query_genomes}&select(genome_id)&limit(25000)"
+response = make_api_request(url_genomes)
+enterobacter_genome_ids = extract_ids(response)
+
+# PASO 2: Obtener los datos AMR filtrando específicamente por los IDs obtenidos
+# Endpoint: /genome_amr/
+# Nota: La API tiene un límite en la longitud de la URL, por lo que podría ser 
+# necesario paginar o dividir la lista de genome_ids en lotes (chunks).
+for chunk in chunk_list(enterobacter_genome_ids, chunk_size=500):
+    ids_joined = ",".join(chunk)
+    query_amr = f"and(in(genome_id, ({ids_joined})), eq(evidence, Laboratory), in(resistant_phenotype, (Resistant, Susceptible)))"
+    url_amr = f"https://www.bv-brc.org/api/genome_amr/?{query_amr}&select(genome_id,taxon_id,antibiotic,resistant_phenotype)"
+    amr_data = make_api_request(url_amr)
+    guardar_datos(amr_data)
 ```
 
 ---
