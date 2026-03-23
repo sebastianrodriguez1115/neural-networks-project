@@ -91,7 +91,7 @@ El comando genera en `output_dir`:
 - `bigru/<genome_id>.npy` — matriz `[1024, 3]` por genoma
 
 ## Decisiones pendientes
-- [x] Qué organismo(s) bacteriano(s) usar → ESKAPE completo (*E. faecium, S. aureus, K. pneumoniae, A. baumannii, P. aeruginosa, Enterobacter spp.*), modelo único entrenado con todas las especies
+- [x] Qué organismo(s) bacteriano(s) usar → Grupo ESKAPE (excluyendo *Enterobacter spp.* por complejidad extra de la API de BV-BRC), modelo único entrenado con las 5 especies restantes
 - [x] Qué antibiótico(s) usar → todos los disponibles con evidencia de laboratorio; el antibiótico entra como feature al modelo (embedding o índice entero)
 - [ ] Longitud máxima de secuencia para la BiRNN Variante B (solo si se implementa) — truncado, sliding window o submuestreo
 - [x] Formato de almacenamiento → etiquetas en CSV, vectores de k-meros en `.npy` (numpy); migrar a HDF5 si el rendimiento lo requiere

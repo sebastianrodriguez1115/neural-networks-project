@@ -4,6 +4,34 @@ Este documento resume los hallazgos del análisis exploratorio sobre el dataset 
 
 ---
 
+## Cómo correr el EDA
+
+El código está en `src/eda.py`. El comando `eda` en `main.py` es el punto de entrada CLI.
+
+### 1. Preparar la muestra (opcional)
+
+Si no tienes los genomas, descarga una muestra pequeña (ej. 30 por especie) para el análisis genómico:
+
+```bash
+# Descargar etiquetas (si no existen)
+uv run python main.py download-amr
+# Descargar muestra de genomas
+uv run python main.py download-genomes --sample-per-species 30 --output-dir data/raw/fasta_sample
+```
+
+### 2. Ejecutar el análisis
+
+```bash
+# Análisis completo (CSV y genomas en rutas por defecto):
+uv run python main.py eda --genomes-dir data/raw/fasta_sample
+# Ruta personalizada al CSV de etiquetas:
+uv run python main.py eda --genomes-dir data/raw/fasta_sample --labels data/processed/amr_labels.csv
+# Mostrar más antibióticos en el ranking (por defecto: 20):
+uv run python main.py eda --genomes-dir data/raw/fasta_sample --top-n 30
+```
+
+---
+
 ## Panorama del dataset
 
 El dataset contiene **162,170 registros** de pruebas de laboratorio que asocian genomas bacterianos con su respuesta a antibióticos. Cada registro es un triple `(genome_id, antibiotic, resistant_phenotype)`.
@@ -179,20 +207,6 @@ No se identificó leakage. Las features (k-meros del FASTA) y el target (`resist
 - [x] **Dimensión de embedding del antibiótico: 49** → `min(50, (96 // 2) + 1)`
 - [x] **Filtrado técnico**: Limitar el dataset únicamente a registros con `laboratory_typing_method == 'Broth dilution'`.
 - [x] **Duplicados**: Se conserva el primer registro usando `drop_duplicates(keep='first')` en `src/data_pipeline/cleaning.py`.
-- [ ] **Enterobacter ausente**: Investigar por qué `taxon_id=547` devuelve 0 registros en BV-BRC (posiblemente requiere especificar especies individuales como *E. cloacae*).
+- [x] **Enterobacter ausente**: Se investigó el `taxon_id=547`. El endpoint de AMR de BV-BRC no soporta filtrar por `taxon_lineage_ids`, lo que requeriría una doble consulta (primero genomas, luego AMR por IDs) añadiendo complejidad no justificada. Se excluyó *Enterobacter spp.* del alcance del proyecto.
 - [x] **Filtro de longitud mínima**: Se descartan genomas < 0.5 Mb en el pipeline (`MIN_GENOME_LENGTH = 500_000`).
 
----
-
-## Apéndice: cómo correr el EDA
-
-El código está en `src/eda.py`. El comando `eda` en `main.py` es el punto de entrada CLI.
-
-```bash
-# Análisis completo (CSV y genomas en rutas por defecto):
-uv run python main.py eda --genomes-dir data/raw/fasta_sample
-# Ruta personalizada al CSV de etiquetas:
-uv run python main.py eda --genomes-dir data/raw/fasta_sample --labels data/processed/amr_labels.csv
-# Mostrar más antibióticos en el ranking (por defecto: 20):
-uv run python main.py eda --genomes-dir data/raw/fasta_sample --top-n 30
-```

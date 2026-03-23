@@ -25,15 +25,16 @@ from ._http import (
 logger = logging.getLogger(__name__)
 
 # Taxon IDs de NCBI para los organismos del grupo ESKAPE.
-# Para Enterobacter se usa el ID del género (547) porque agrupa
-# E. cloacae, E. aerogenes y otras especies clínicamente relevantes.
+# NOTA: Enterobacter spp. (547) fue excluido. Aunque es parte de ESKAPE, el endpoint
+# /genome_amr/ no soporta filtrado por taxon_lineage_ids, lo que obligaría a realizar
+# una doble consulta previa por /genome/ para obtener los genome_ids, complicando el pipeline.
 ESKAPE_TAXON_IDS = {
     "Enterococcus faecium":    1352,
     "Staphylococcus aureus":   1280,
-    "Klebsiella pneumoniae":    573,
-    "Acinetobacter baumannii":  470,
-    "Pseudomonas aeruginosa":   287,
-    "Enterobacter spp.":        547,
+    "Klebsiella pneumoniae":   573,
+    "Acinetobacter baumannii": 470,
+    "Pseudomonas aeruginosa":  287,
+    # "Enterobacter spp.":       547, # Excluido por complejidad en BV-BRC API
 }
 
 # Campos que se solicitan al endpoint genome_amr.

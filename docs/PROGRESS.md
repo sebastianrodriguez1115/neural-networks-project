@@ -92,6 +92,7 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] Dim embedding antibiótico → **49** `[min(50, (96 // 2) + 1)]` (96 antibióticos en dataset)
 - [x] pos_weight → **0.8522** (Susceptible/Resistant, del EDA)
 - [x] Early stopping → pérdida de validación, patience=10
+- [x] *Enterobacter spp.* ausente del dataset — excluido por requerir doble consulta (primero genomas, luego AMR) dado que la API de BV-BRC no soporta filtrar por linaje en el endpoint de AMR, añadiendo complejidad innecesaria.
 
 ### Pendientes
-- [ ] *Enterobacter spp.* ausente del dataset — investigar si taxon_id=547 captura bien los datos
+- Ninguna.
