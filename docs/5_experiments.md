@@ -36,3 +36,19 @@
   - Nota pendiente: hacer early stopping sobre F1 requiere evaluación completa por epoch (costoso). Alternativa más estándar: early stopping sobre pérdida de validación y usar F1 solo para selección final. Evaluar en implementación.
   - Nota: un *step* es una actualización de pesos con un mini-batch; un *epoch* es una pasada completa por el dataset. El artículo de referencia reporta steps (2800–3600), pero como nuestro dataset tendrá un tamaño diferente, trabajamos en epochs para que el criterio sea independiente del tamaño del dataset.
 - [x] Variación de k → usar k=3,4,5 fijo (el artículo de referencia probó k=6 sin mejora, k=3,4,5 está justificado)
+
+---
+
+## Glosario de métricas de desempeño
+
+Dada la naturaleza crítica de la predicción de RAM, se emplean las siguientes métricas de clasificación binaria para evaluar los modelos:
+
+| Métrica | Definición matemática | Interpretación en Microbiología |
+|---|---|---|
+| **Recall** (Sensibilidad) | $TP / (TP + FN)$ | **Métrica prioritaria**. Representa la capacidad del modelo para detectar todos los casos resistentes. Un recall alto (ej. >0.90) asegura que casi ninguna bacteria resistente sea clasificada erróneamente como susceptible. |
+| **Precision** | $TP / (TP + FP)$ | Representa la confiabilidad de una alerta de resistencia. Una precisión alta indica que si el modelo dice que una bacteria es resistente, es muy probable que lo sea, evitando el uso innecesario de antibióticos de reserva. |
+| **F1-Score** | $2 \cdot \frac{Precision \cdot Recall}{Precision + Recall}$ | Media armónica entre precisión y recall. Es el indicador global de la calidad del modelo, especialmente útil cuando las clases están desbalanceadas. Nuestro éxito se define por un **F1 ≥ 0.85**. |
+| **Accuracy** | $(TP + TN) / Total$ | Porcentaje global de aciertos. Aunque es útil, puede ser engañoso si hay mucho desbalance; por ello, no es nuestra métrica principal de decisión. |
+| **AUC-ROC** | Área bajo la curva ROC | Mide la capacidad de discriminación del modelo (qué tan bien separa resistentes de susceptibles) independientemente del umbral de decisión elegido. |
+
+*Abreviaturas: TP (True Positive/Resistente correcto), TN (True Negative/Susceptible correcto), FP (False Positive/Falsa alarma), FN (False Negative/Resistente omitido).*
