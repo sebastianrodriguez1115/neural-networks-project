@@ -134,7 +134,7 @@ def eda(
         Path("data/processed/amr_labels.csv"),
         help="Ruta al CSV de etiquetas AMR.",
     ),
-    top_n: int = typer.Option(
+    top_n_antibiotics: int = typer.Option(
         20,
         help="Número de antibióticos a mostrar en el ranking.",
     ),
@@ -154,7 +154,7 @@ def eda(
         typer.echo(f"Error: no se encontró el archivo de etiquetas: {labels}", err=True)
         raise typer.Exit(code=1)
 
-    run_eda(labels_path=labels, top_n=top_n, genomes_dir=genomes_dir)
+    run_eda(labels_path=labels, top_n=top_n_antibiotics, genomes_dir=genomes_dir)
 
 
 @app.command(help="Exporta los pares (genome_id, antibiotic) con etiquetas contradictorias (Resistant y Susceptible en registros distintos) a un CSV para inspección.")

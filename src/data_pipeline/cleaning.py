@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas
 from Bio import SeqIO
 
-from .constants import MIN_GENOME_LENGTH
+from .constants import MIN_GENOME_LENGTH, MIN_RECORDS_PER_ANTIBIOTIC
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +12,14 @@ logger = logging.getLogger(__name__)
 class LabelCleaner:
     """Elimina pares contradictorios y duplicados consistentes de las etiquetas AMR."""
 
-    def __init__(self, labels_path: Path):
+    def __init__(self, labels_path: Path, min_records_per_antibiotic: int = MIN_RECORDS_PER_ANTIBIOTIC):
         self._labels_path = Path(labels_path)
+        self._min_records = min_records_per_antibiotic
         self._dataframe: pandas.DataFrame | None = None
         self._n_initial = 0
         self._n_typing_method_removed = 0
+        self._n_low_freq_antibiotics_removed = 0
+        self._n_antibiotics_removed_count = 0
         self._n_contradictory_pairs = 0
         self._n_contradictory_rows = 0
         self._n_duplicates_removed = 0
@@ -24,11 +27,14 @@ class LabelCleaner:
     def clean(self) -> pandas.DataFrame:
         self._load()
         self._filter_by_typing_method()
+        self._filter_by_antibiotic_frequency()
         self._remove_contradictory_pairs()
         self._deduplicate()
         logger.info(
             f"Cleaning complete: {self._n_initial} → {len(self._dataframe)} records "
             f"({self._n_typing_method_removed} non-broth dilution removed, "
+            f"{self._n_low_freq_antibiotics_removed} records from {self._n_antibiotics_removed_count} "
+            f"low-frequency antibiotics removed, "
             f"{self._n_contradictory_pairs} contradictory pairs / "
             f"{self._n_contradictory_rows} rows removed, "
             f"{self._n_duplicates_removed} consistent duplicates removed)"
@@ -50,6 +56,25 @@ class LabelCleaner:
         ].reset_index(drop=True)
         self._n_typing_method_removed = before - len(self._dataframe)
         logger.info(f"Typing method filter: {self._n_typing_method_removed} non-broth dilution records removed")
+
+    def _filter_by_antibiotic_frequency(self) -> None:
+        """Elimina antibióticos que no tengan el número mínimo de registros requerido."""
+        before = len(self._dataframe)
+        counts = self._dataframe["antibiotic"].value_counts()
+        to_keep = counts[counts >= self._min_records].index
+        
+        self._n_antibiotics_removed_count = len(counts) - len(to_keep)
+        self._dataframe = self._dataframe[
+            self._dataframe["antibiotic"].isin(to_keep)
+        ].reset_index(drop=True)
+        self._n_low_freq_antibiotics_removed = before - len(self._dataframe)
+        
+        if self._n_antibiotics_removed_count > 0:
+            removed = set(counts.index) - set(to_keep)
+            logger.info(
+                f"Antibiotic frequency filter: {self._n_antibiotics_removed_count} "
+                f"antibiotics removed ({', '.join(sorted(removed))})"
+            )
 
     def _remove_contradictory_pairs(self) -> None:
         phenotype_counts = (

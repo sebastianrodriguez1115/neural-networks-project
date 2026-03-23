@@ -68,7 +68,7 @@ El dataset original contiene **162,170 registros** de pruebas de laboratorio que
 | Dimension | Valor |
 |---|---|
 | Registros totales | 162,170 |
-| Genomas unicos | 16,204 |
+| Genomas unicos | 16,281 |
 | Antibioticos distintos | 96 |
 | Especies ESKAPE presentes | 5 de 6 |
 
@@ -76,14 +76,14 @@ Las especies incluidas son: *Enterococcus faecium*, *Staphylococcus aureus*, *Kl
 
 ### 4.3 Filtrado y dataset final para entrenamiento
 
-Tras el preprocesamiento (seccion 5), el dataset se reduce a registros con metodo de laboratorio *Broth dilution* (estandar de oro), etiquetas binarias (R/S), y genomas validos. El dataset final de entrenamiento contiene:
+Tras el preprocesamiento (seccion 5), el dataset se reduce a registros con metodo de laboratorio *Broth dilution* (estandar de oro), etiquetas binarias (R/S), filtrado por frecuencia de antibioticos (mínimo 20 registros) y genomas validos. El dataset final de entrenamiento contiene:
 
 | Particion | Muestras |
 |---|---|
-| Entrenamiento (70%) | 57,088 |
-| Validacion (15%) | 12,613 |
-| Prueba (15%) | 12,519 |
-| **Total** | **82,220** |
+| Entrenamiento (70%) | 57,036 |
+| Validacion (15%) | 12,628 |
+| Prueba (15%) | 12,528 |
+| **Total** | **82,192** |
 
 ### 4.4 Entradas y salidas
 
@@ -98,13 +98,14 @@ Tras el preprocesamiento (seccion 5), el dataset se reduce a registros con metod
 
 El pipeline de datos se ejecuta con el comando `uv run python main.py prepare-data` y comprende los siguientes pasos:
 
-1. **Filtrado por metodo de laboratorio:** solo se conservan registros con `laboratory_typing_method == 'Broth dilution'` (53.5% del dataset original), considerado el estandar de oro para la determinacion de la Concentracion Minima Inhibitoria (MIC).
-2. **Eliminacion de etiquetas contradictorias:** se descartan 488 pares genoma-antibiotico donde existian etiquetas simultaneas de Resistant y Susceptible.
-3. **Deduplicacion:** se conserva el primer registro para duplicados consistentes (mismo `genome_id` + `antibiotic`).
-4. **Filtrado de genomas incompletos:** se descartan genomas < 0.5 Mb (2 ensambles casi vacios de *E. faecium*).
-5. **Extraccion de k-meros:** para cada genoma se calculan histogramas de frecuencia para k=3, 4 y 5 (4^3 + 4^4 + 4^5 = 1,344 dimensiones) y se concatenan en un unico vector.
-6. **Normalizacion:** media 0 y varianza 1, calculadas exclusivamente sobre el conjunto de entrenamiento para evitar data leakage.
-7. **Split estratificado:** 70/15/15 por `genome_id` (no por registro), con estratificacion por etiqueta.
+1. **Filtrado por metodo de laboratorio:** solo se conservan registros con `laboratory_typing_method == 'Broth dilution'` (53.5% del dataset original).
+2. **Filtrado por frecuencia de antibioticos:** se eliminan registros de antibioticos con menos de **20 registros** en total (ej. amoxicillin, dicloxacillin). Esto asegura que el modelo tenga suficiente señal para aprender los embeddings y que haya muestras suficientes en todas las particiones.
+3. **Eliminacion de etiquetas contradictorias:** se descartan 382 pares genoma-antibiotico donde existian etiquetas simultaneas de Resistant y Susceptible.
+4. **Deduplicacion:** se conserva el primer registro para duplicados consistentes (mismo `genome_id` + `antibiotic`).
+5. **Filtrado de genomas incompletos:** se descartan genomas < 0.5 Mb (219 ensambles detectados).
+6. **Extraccion de k-meros:** para cada genoma se calculan histogramas de frecuencia para k=3, 4 y 5 (1,344 dimensiones) y se concatenan en un unico vector.
+7. **Normalizacion:** media 0 y varianza 1, calculadas exclusivamente sobre el conjunto de entrenamiento para evitar data leakage.
+8. **Split estratificado:** 70/15/15 por `genome_id` (no por registro), con estratificacion por etiqueta.
 
 ### 5.2 Analisis exploratorio de datos
 
@@ -118,11 +119,11 @@ El balance global es razonable: **54% Resistant / 46% Susceptible**.
 
 | Especie | Registros | Genomas | R% | S% |
 |---|---|---|---|---|
-| *Enterococcus faecium* | 22,318 | 3,214 | 47.8% | 52.2% |
+| *Enterococcus faecium* | 22,318 | 3,234 | 47.8% | 52.2% |
 | *Staphylococcus aureus* | 41,458 | 4,437 | 27.6% | 72.4% |
-| *Klebsiella pneumoniae* | 66,140 | 5,750 | 63.6% | 36.4% |
-| *Acinetobacter baumannii* | 24,193 | 1,426 | 79.5% | 20.5% |
-| *Pseudomonas aeruginosa* | 8,061 | 1,377 | 50.9% | 49.1% |
+| *Klebsiella pneumoniae* | 66,140 | 5,751 | 63.6% | 36.4% |
+| *Acinetobacter baumannii* | 24,193 | 1,469 | 79.5% | 20.5% |
+| *Pseudomonas aeruginosa* | 8,061 | 1,390 | 50.9% | 49.1% |
 
 El desbalance entre especies es significativo: *A. baumannii* tiene 80% Resistant mientras *S. aureus* tiene 72% Susceptible. Mitigacion: no se incluye `taxon_id` como feature; la especie queda implicitamente codificada en los k-meros del genoma.
 
@@ -140,17 +141,17 @@ El desbalance entre especies es significativo: *A. baumannii* tiene 80% Resistan
 
 #### Analisis genomico
 
-Se analizo una muestra de 138 genomas (30 por especie, estratificados por fenotipo):
+Se analizo la calidad de los **16,571 archivos FASTA** presentes en el repositorio:
 
 | Especie | N | Long. media (Mb) | GC% med. |
 |---|---|---|---|
-| *E. faecium* | 29 | 2.86 | 38.2% |
-| *S. aureus* | 27 | 2.78 | 32.7% |
-| *K. pneumoniae* | 26 | 5.55 | 57.2% |
-| *A. baumannii* | 29 | 4.20 | 39.3% |
-| *P. aeruginosa* | 27 | 6.69 | 66.0% |
+| *A. baumannii* | 1,469 | 3.97 | 39.0% |
+| *E. faecium* | 3,234 | 2.83 | 38.1% |
+| *K. pneumoniae* | 5,751 | 5.56 | 57.2% |
+| *P. aeruginosa* | 1,390 | 6.73 | 66.1% |
+| *S. aureus* | 4,437 | 2.79 | 32.7% |
 
-La variabilidad de GC entre especies (32.7%-66.0%) es una senal biologica real que los k-meros capturan naturalmente.
+La variabilidad de GC entre especies (32.7%-66.1%) es una senal biologica real que los k-meros capturan naturalmente.
 
 #### Calidad de datos
 
@@ -211,28 +212,30 @@ Indice antibiotico → Embedding (49) ─┘                        │
 
 | Componente | Detalle |
 |---|---|
-| Parametros totales | 782,804 |
+| Parametros totales | 782,510 |
 | Capa oculta 1 | Linear(1393, 512) + ReLU + Dropout(0.3) |
 | Capa oculta 2 | Linear(512, 128) + ReLU + Dropout(0.3) |
 | Capa de salida | Linear(128, 1) — logit sin sigmoid |
-| Embedding antibiotico | Embedding(96, 49) |
+| Embedding antibiotico | Embedding(90, 49) |
+
+*Nota: Se conservaron 90 de los 96 antibióticos originales tras aplicar el filtro de frecuencia mínima.*
 
 ### 6.4 Proceso de entrenamiento
 
 | Hiperparametro | Valor |
 |---|---|
 | Optimizador | Adam (lr=0.001) |
-| Funcion de perdida | BCEWithLogitsLoss con pos_weight=0.6302 |
+| Funcion de perdida | BCEWithLogitsLoss con pos_weight=0.6299 |
 | Batch size | 32 |
-| Epocas maximas | 200 |
-| Early stopping | Patience=20 sobre val_loss |
+| Epocas maximas | 100 |
+| Early stopping | Patience=10 sobre val_loss |
 | Checkpoint | Mejor F1 en validacion |
 | Semilla aleatoria | 42 |
 | Dispositivo | CUDA (GPU) |
 
-El `pos_weight` (0.6302) se recalcula sobre el conjunto de entrenamiento (no sobre el dataset completo) para reflejar la proporcion real de clases en el split de entrenamiento.
+El `pos_weight` (0.6299) se recalcula sobre el conjunto de entrenamiento (no sobre el dataset completo) para reflejar la proporcion real de clases en el split de entrenamiento.
 
-**Criterio de early stopping:** se monitorea la perdida de validacion. Si no mejora durante 20 epocas consecutivas, se detiene el entrenamiento. El checkpoint se guarda basado en el mejor F1 de validacion (metrica de interes clinico), no la loss.
+**Criterio de early stopping:** se monitorea la perdida de validacion. Si no mejora durante 10 epocas consecutivas, se detiene el entrenamiento. El checkpoint se guarda basado en el mejor F1 de validacion (metrica de interes clinico), no la loss.
 
 ### 6.5 Proceso de evaluacion
 
@@ -253,54 +256,54 @@ El `pos_weight` (0.6302) se recalcula sobre el conjunto de entrenamiento (no sob
 
 ### 7.1 Convergencia del entrenamiento
 
-El modelo se entreno durante **75 epocas** antes de que el early stopping detuviera el entrenamiento (sin mejora en val_loss por 20 epocas). El mejor checkpoint se guardo en la epoca 71 con val_F1 = 0.8392.
+El modelo se entreno durante **43 epocas** antes de que el early stopping detuviera el entrenamiento (sin mejora en val_loss por 10 epocas). El mejor checkpoint se guardo en la epoca 41 con val_F1 = 0.8294.
 
 **Curvas de entrenamiento:**
 
-| Metrica | Epoca 1 | Epoca 75 (final) | Mejor checkpoint (epoca 71) |
+| Metrica | Epoca 1 | Epoca 43 (final) | Mejor checkpoint (epoca 41) |
 |---|---|---|---|
-| Train loss | 0.4270 | 0.2842 | 0.2844 |
-| Val loss | 0.3923 | 0.3072 | 0.3144 |
-| Val F1 | 0.7828 | 0.8227 | 0.8392 |
+| Train loss | 0.4317 | 0.3027 | 0.3030 |
+| Val loss | 0.3771 | 0.2956 | 0.3011 |
+| Val F1 | 0.7947 | 0.8191 | 0.8294 |
 
-La brecha entre train_loss (0.28) y val_loss (0.31) al final del entrenamiento es moderada (~0.03), lo que indica un **ligero sobreajuste controlado**. Las curvas de loss muestran convergencia gradual sin divergencia abrupta, confirmando que el early stopping detuvo el entrenamiento en un punto adecuado.
+La brecha entre train_loss y val_loss es minima (~0.01), lo que indica una generalización excelente y un control efectivo del sobreajuste.
 
 ### 7.2 Metricas en el conjunto de prueba
 
 | Metrica | Valor |
 |---|---|
-| Accuracy | 0.8215 |
-| Precision | 0.8238 |
-| Recall | 0.9031 |
-| **F1** | **0.8616** |
-| **AUC-ROC** | **0.9098** |
-| Umbral optimo | 0.3973 |
-| Loss | 0.3062 |
+| Accuracy | 0.8157 |
+| Precision | 0.8100 |
+| Recall | 0.9165 |
+| **F1** | **0.8600** |
+| **AUC-ROC** | **0.9035** |
+| Umbral optimo | 0.4167 |
+| Loss | 0.3086 |
 
 ### 7.3 Evaluacion contra criterios de exito
 
 | Criterio | Objetivo | Resultado | Estado |
 |---|---|---|---|
-| F1 >= 0.85 | Superar baseline | 0.8616 | Cumplido |
-| Recall >= 0.90 | Minimizar falsos negativos | 0.9031 | Cumplido |
-| Superar baseline F1 | > 0.7366 | 0.8616 (+17.0%) | Cumplido |
-| Sin sobreajuste evidente | Gap train-val < 0.05 | 0.03 | Cumplido |
+| F1 >= 0.85 | Superar baseline | 0.8600 | Cumplido |
+| Recall >= 0.90 | Minimizar falsos negativos | 0.9165 | Cumplido |
+| Superar baseline F1 | > 0.7366 | 0.8600 (+16.7%) | Cumplido |
+| Sin sobreajuste evidente | Gap train-val < 0.05 | ~0.01 | Cumplido |
 
 ### 7.4 Analisis de resultados
 
 **Fortalezas:**
-- El recall de 0.9031 indica que el modelo detecta correctamente el 90.3% de los casos resistentes, lo cual es critico en un contexto clinico donde un falso negativo (resistente clasificado como susceptible) puede derivar en tratamiento ineficaz.
-- El AUC-ROC de 0.9098 demuestra buena capacidad discriminativa del modelo a traves de diferentes umbrales.
-- El F1 de 0.8616 supera el baseline por antibiotico (0.7366) en un 17%, confirmando que los k-meros aportan informacion genomica predictiva mas alla de la senal epidemiologica.
+- El recall de 0.9165 indica que el modelo detecta correctamente el 91.6% de los casos resistentes, lo cual es critico en un contexto clinico donde un falso negativo puede derivar en tratamiento ineficaz.
+- El AUC-ROC de 0.9035 demuestra buena capacidad discriminativa del modelo a traves de diferentes umbrales.
+- El F1 de 0.8600 supera el baseline por antibiotico (0.7366) en un 16.7%, confirmando que los k-meros aportan informacion genomica predictiva mas alla de la senal epidemiologica.
 
 **Diagnostico de sobreajuste/subajuste:**
-- **Sobreajuste:** la brecha train-val loss es ~0.03, indicando un ligero sobreajuste controlado por el dropout (0.3) y el early stopping.
-- **Subajuste:** no se observa — tanto train loss como val loss descienden consistentemente durante las primeras 50 epocas.
-- El umbral optimo (0.3973) es menor que 0.5, lo cual es esperado dado el desbalance de clases y refleja la calibracion adecuada del modelo con pos_weight.
+- **Sobreajuste:** la brecha train-val loss es minima (~0.01), indicando un excelente control del sobreajuste mediante dropout (0.3) y early stopping.
+- **Subajuste:** no se observa — tanto train loss como val loss descienden consistentemente.
+- El umbral optimo (0.4167) es menor que 0.5, lo cual es esperado dado el desbalance de clases y refleja la calibracion adecuada del modelo con pos_weight.
 
 **Limitaciones:**
 - El modelo no captura dependencias posicionales en el genoma, ya que los histogramas de k-meros son un resumen composicional sin orden.
-- Los 27 antibioticos con desbalance extremo pueden tener predicciones sesgadas hacia la clase mayoritaria de cada antibiotico.
+- Los antibioticos con desbalance extremo pueden tener predicciones sesgadas hacia la clase mayoritaria de cada antibiotico.
 - El modelo trata cada par (genoma, antibiotico) de forma independiente; no modela interacciones de resistencia cruzada entre antibioticos.
 
 ---
@@ -370,22 +373,20 @@ uv run python main.py train-mlp --epochs 50 --batch-size 64 --lr 0.0005
 
 ### Logros de esta entrega
 
-1. Se implemento un pipeline de datos completo y reproducible que descarga, limpia, transforma y divide datos genomicos de 5 especies ESKAPE con 96 antibioticos.
-2. Se entreno un MLP superficial que alcanza **F1=0.8616** y **Recall=0.9031** en el conjunto de prueba, cumpliendo ambos criterios de exito (F1 >= 0.85, Recall >= 0.90).
-3. Los resultados confirman que los histogramas de frecuencias de k-meros capturan informacion genomica suficiente para predecir resistencia antimicrobiana con un rendimiento significativamente superior al baseline epidemiologico (+17% en F1).
+1. Se implemento un pipeline de datos completo y reproducible que descarga, limpia, filtra por frecuencia de antibioticos y transforma datos genomicos de 5 especies ESKAPE.
+2. Se entreno un MLP superficial que alcanza **F1=0.8600** y **Recall=0.9165** en el conjunto de prueba, cumpliendo ambos criterios de exito.
+3. Los resultados confirman que los histogramas de frecuencias de k-meros capturan informacion genomica suficiente para predecir resistencia antimicrobiana con un rendimiento significativamente superior al baseline epidemiologico (+16.7% en F1).
 
 ### Limitaciones
 
-- **Sin contexto posicional:** los histogramas de k-meros son un resumen composicional que no preserva el orden de las secuencias genomicas. Mutaciones puntuales en regiones criticas podrian no estar bien representadas.
-- **Antibioticos con datos escasos:** 27 antibioticos con desbalance extremo y algunos con muy pocos registros limitan la capacidad del modelo para generalizarlos.
+- **Sin contexto posicional:** los histogramas de k-meros son un resumen composicional que no preserva el orden de las secuencias genomicas.
 - **Especie ausente:** *Enterobacter spp.* no esta en el dataset, limitando la cobertura del grupo ESKAPE completo.
-- **Sin validacion externa:** el modelo se evaluo solo en datos de BV-BRC; no se probo con datos de otras fuentes [10].
+- **Sin validacion externa:** el modelo se evaluo solo en datos de BV-BRC.
 
 ### Trabajo futuro (Entrega final)
 
-- **Implementar BiGRU + Attention:** red recurrente bidireccional con mecanismo de atencion de Bahdanau que procese los histogramas como secuencia, potencialmente capturando relaciones entre los distintos ordenes de k-meros.
+- **Implementar BiGRU + Attention:** red recurrente bidireccional con mecanismo de atencion de Bahdanau que procese los histogramas como secuencia.
 - **Comparacion sistematica:** evaluar si la complejidad adicional del modelo profundo se traduce en mejoras significativas en F1 y recall.
-- **Analisis de pesos de atencion:** examinar que ordenes de k-meros (k=3, 4 o 5) son mas informativos para la prediccion.
 
 ---
 

@@ -31,6 +31,7 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 ### 1.2 Preprocesamiento de etiquetas (`src/data_pipeline/`)
 - [x] Descartar pares contradictorios (488 pares con R y S para mismo genome_id + antibiotic)
 - [x] Eliminar duplicados consistentes (genome_id + antibiotic) — conservar primer registro
+- [x] Filtrar antibióticos con baja frecuencia (< 20 registros) para asegurar generalización
 - [x] Filtrar genomas < 0.5 Mb (2 genomas casi vacíos de *E. faecium*)
 - [x] Guardar triples limpios `(genome_id, antibiotic, label)` en CSV
 
