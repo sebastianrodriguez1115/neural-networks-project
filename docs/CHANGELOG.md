@@ -1,5 +1,17 @@
 # CHANGELOG
 
+### 2026-03-23
+
+#### Mejora del pipeline y actualización de resultados MLP
+- Implementado filtro de frecuencia mínima de antibióticos (`< 20 registros`) en `LabelCleaner` para garantizar generalización y partición correcta (`src/data_pipeline/cleaning.py`).
+- Añadido glosario de métricas clínicas y su interpretación biológica en `docs/5_experiments.md`.
+- Actualizado el reporte del EDA (`docs/2_eda.md`) con las estadísticas reales del dataset completo (16,571 genomas, 219 descartados por longitud).
+- Documentada la justificación de la arquitectura (capas 512, 128) basándose en Haykin y eficiencia computacional en `docs/4_models.md`.
+- Re-entrenado el modelo MLP con el dataset filtrado (82,192 registros, 90 antibióticos conservados).
+- Métricas actualizadas en `docs/REPORT_SHALLOW_NN.md`: **F1 = 0.8600, Recall = 0.9165, AUC-ROC = 0.9035**.
+- Renombrado parámetro CLI `--top-n` a `--top-n-antibiotics` en `main.py` para mayor claridad.
+- Creado script `src/plot_roc.py` para generar la curva ROC del modelo.
+
 ### 2026-03-22
 
 #### Entrenamiento y evaluación del MLP (Fase 2.3)

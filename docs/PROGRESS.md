@@ -63,10 +63,10 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] Tests unitarios (`tests/test_train.py` y `tests/test_mlp.py`)
 
 ### 2.3 Experimento y reporte
-- [x] Entrenar y evaluar MLP sobre dataset completo (57088 train / 12613 val / 12519 test, 75 épocas, early stopping)
-- [x] Métricas en test set: accuracy=0.8215, precision=0.8238, recall=0.9031, F1=0.8616, AUC-ROC=0.9098
-- [x] Criterio de éxito: F1=0.8616 ≥ 0.85 ✓ y recall=0.9031 ≥ 0.90 ✓
-- [ ] Reporte de entrega (shallow NN)
+- [x] Entrenar y evaluar MLP sobre dataset completo (57036 train / 12628 val / 12528 test, 43 épocas, early stopping)
+- [x] Métricas en test set: accuracy=0.8157, precision=0.8100, recall=0.9165, F1=0.8600, AUC-ROC=0.9035
+- [x] Criterio de éxito: F1=0.8600 ≥ 0.85 ✓ y recall=0.9165 ≥ 0.90 ✓
+- [x] Reporte de entrega (shallow NN)
 
 ---
 

@@ -19,14 +19,12 @@ from torch.utils.data import DataLoader
 
 
 def collect_predictions(
-    model: nn.Module,
-    loader: DataLoader,
-    criterion: nn.Module,
+    model: torch.nn.Module,
+    loader: torch.utils.data.DataLoader,
+    criterion: torch.nn.Module,
     device: torch.device,
 ) -> tuple[numpy.ndarray, numpy.ndarray, float]:
     """
-    Ejecuta inferencia sobre un DataLoader sin modificar pesos.
-
     Recorre todos los batches en modo eval (sin gradientes ni dropout),
     acumula las probabilidades predichas, las etiquetas reales, y la
     pérdida promedio.
@@ -37,29 +35,45 @@ def collect_predictions(
         - targets: array (n_samples,) con etiquetas reales (0.0 o 1.0)
         - loss: pérdida promedio sobre todos los batches
     """
+    # 1. Ponemos el modelo en modo evaluación (desactiva Dropout y BatchNormalization)
     model.eval()
     total_loss = 0.0
     n_batches = 0
 
+    # 2. Listas temporales para guardar los resultados de cada lote (batch)
     all_probabilities = []
     all_targets = []
 
+    # 3. 'no_grad' desactiva el cálculo de derivadas para ahorrar memoria y ganar velocidad
     with torch.no_grad():
+        # 4. Recorremos el cargador de datos lote a lote
         for genome, antibiotic_idx, label in loader:
+            # 5. Movemos los datos al dispositivo de cómputo (GPU o CPU)
             genome = genome.to(device)
             antibiotic_idx = antibiotic_idx.to(device)
+
+            # 6. 'unsqueeze(1)' ajusta la forma de la etiqueta a [BatchSize, 1]
             label = label.to(device).unsqueeze(1)
 
+            # 7. Inferencia: el modelo genera los 'logits' (fuerza de creencia cruda)
             logits = model(genome, antibiotic_idx)
+
+            # 8. Calculamos el error (loss) comparando contra la realidad
             loss = criterion(logits, label)
+
+            # 9. Acumulamos el valor numérico de la pérdida
             total_loss += loss.item()
             n_batches += 1
 
-            # Convertir logits a probabilidades con sigmoid
+            # 10. Transformamos logits a probabilidades (0 a 1) usando la función Sigmoide.
+            # Movamos a CPU y pasamos a NumPy para el cálculo de métricas posterior.
             probabilities = torch.sigmoid(logits).cpu().numpy().ravel()
+
+            # 11. Guardamos probabilidades y etiquetas reales (verdades terreno)
             all_probabilities.append(probabilities)
             all_targets.append(label.cpu().numpy().ravel())
 
+    # 12. Concatenamos todos los lotes en vectores gigantes y calculamos el promedio de la pérdida
     return (
         numpy.concatenate(all_probabilities),
         numpy.concatenate(all_targets),
