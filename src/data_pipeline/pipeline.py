@@ -167,6 +167,52 @@ def _normalize_and_save(
     logger.info(f"Features saved to: {output_dir}")
 
 
+def _extract_single_genome_tokens(
+    genome_id: str, fasta_dir: Path, k: int, max_len: int
+) -> tuple[str, numpy.ndarray]:
+    """Extrae secuencia de tokens de un solo genoma."""
+    extractor = KmerExtractor(fasta_dir / f"{genome_id}.fna")
+    return genome_id, extractor.to_token_sequence(k=k, max_len=max_len)
+
+
+def _extract_and_save_tokens(
+    genome_ids: list[str],
+    fasta_dir: Path,
+    output_dir: Path,
+    k: int,
+    max_len: int,
+    n_jobs: int = 1,
+) -> None:
+    """Extrae secuencias de tokens de k-meros y las guarda como .npy."""
+    if n_jobs == 0 or n_jobs < -1:
+        raise ValueError(f"n_jobs debe ser >= 1 o -1 (80% de los CPUs), recibido: {n_jobs}")
+
+    logger.info(f"Step 7: Token extraction (k={k}, max_len={max_len})")
+    token_dir = output_dir / "token_bigru"
+    token_dir.mkdir(parents=True, exist_ok=True)
+
+    total = len(genome_ids)
+    worker = partial(
+        _extract_single_genome_tokens, fasta_dir=fasta_dir, k=k, max_len=max_len
+    )
+
+    if n_jobs == 1:
+        for i, (genome_id, tokens) in enumerate(map(worker, genome_ids)):
+            numpy.save(token_dir / f"{genome_id}.npy", tokens)
+            if (i + 1) % 10 == 0 or (i + 1) == total:
+                logger.info(f"[{i + 1}/{total}] Tokens extracted: {genome_id}")
+    else:
+        workers = max(1, int(os.cpu_count() * 0.8)) if n_jobs == -1 else n_jobs
+        logger.info(f"Parallel token extraction: {total} genomes, {workers} workers")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(worker, gid): gid for gid in genome_ids}
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                genome_id, tokens = future.result()
+                numpy.save(token_dir / f"{genome_id}.npy", tokens)
+                if (i + 1) % 10 == 0 or (i + 1) == total:
+                    logger.info(f"[{i + 1}/{total}] Tokens extracted: {genome_id}")
+
+
 def run_pipeline(
     labels_path: Path,
     fasta_dir: Path,

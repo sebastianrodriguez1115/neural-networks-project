@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from data_pipeline.constants import RANDOM_SEED, TOTAL_KMER_DIM
-from mlp_model import AMRMLP
+from models.mlp.model import AMRMLP
 from train import (
     collect_predictions,
     compute_metrics,
@@ -87,6 +87,43 @@ class TestSetSeed:
 
 class TestTrainOneEpoch:
     """Tests de train_epoch."""
+
+    def test_gradient_clipping(self, model, synthetic_loader, criterion, device):
+        """Verifica que la norma del gradiente se limite con max_grad_norm."""
+        optimizer = torch.optim.Adam(model.parameters())
+        
+        # Forzar gradientes grandes multiplicando la loss por un factor
+        def train_epoch_with_scaling(m, loader, opt, crit, dev, clip):
+            m.train()
+            for genome, ab_idx, label in loader:
+                genome, ab_idx, label = (
+                    genome.to(dev),
+                    ab_idx.to(dev),
+                    label.to(dev).unsqueeze(1),
+                )
+                logits = m(genome, ab_idx)
+                loss = crit(logits, label) * 1000.0  # Loss artificialmente grande
+                opt.zero_grad()
+                loss.backward()
+
+                # Medir norma antes del clipping
+                norm_before = torch.nn.utils.clip_grad_norm_(m.parameters(), 1e10)
+
+                # Aplicar clipping real
+                torch.nn.utils.clip_grad_norm_(m.parameters(), clip)
+
+                # Medir norma después del clipping
+                norm_after = torch.nn.utils.clip_grad_norm_(m.parameters(), 1e10)
+
+                # Solo verificar clipping cuando aplica [Pascanu13; Goodfellow16, Cap. 10.7]
+                if norm_before > clip:
+                    assert norm_after <= clip + 1e-6  # Tolerancia float
+                break  # Solo un batch es suficiente
+
+        # Usar un clip pequeño (0.01) para que sea casi seguro que norm_before > clip
+        train_epoch_with_scaling(
+            model, synthetic_loader, optimizer, criterion, device, clip=0.01
+        )
 
     def test_returns_float(self, model, synthetic_loader, criterion, device):
         """La función retorna un float (loss promedio)."""

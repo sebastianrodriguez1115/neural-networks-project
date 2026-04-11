@@ -49,7 +49,12 @@ def collect_predictions(
         # 4. Recorremos el cargador de datos lote a lote
         for genome, antibiotic_idx, label in loader:
             # 5. Movemos los datos al dispositivo de cómputo (GPU o CPU)
-            genome = genome.to(device)
+            # MEJORA: Soporte para multi-stream (tupla de tensores)
+            if isinstance(genome, (tuple, list)):
+                genome = tuple(g.to(device) for g in genome)
+            else:
+                genome = genome.to(device)
+
             antibiotic_idx = antibiotic_idx.to(device)
 
             # 6. 'unsqueeze(1)' ajusta la forma de la etiqueta a [BatchSize, 1]

@@ -1,11 +1,11 @@
 """
-AMRDataset — Dataset de PyTorch para predicción de resistencia antimicrobiana.
+BaseAMRDataset — Clase base abstracta para los datasets de predicción de AMR.
 
-Pre-carga los vectores genómicos (.npy) en RAM y devuelve triples
-(genome_vector, antibiotic_idx, label) listos para el DataLoader.
+Contiene la lógica común para cargar etiquetas, splits e índices de antibióticos.
 """
 
 import json
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 import numpy
@@ -14,27 +14,21 @@ import torch
 from torch.utils.data import Dataset
 
 
-class AMRDataset(Dataset):
+class BaseAMRDataset(Dataset, ABC):
     """
-    Dataset para clasificación binaria de resistencia antimicrobiana.
+    Clase base abstracta para datasets de AMR.
 
-    Cada muestra es un triple:
-        - genome_vector (float32, 1344 dims): histograma de k-meros normalizado
-        - antibiotic_idx (long): índice entero del antibiótico
-        - label (float32): 1.0 = Resistant, 0.0 = Susceptible
-
-    Los vectores genómicos se pre-cargan en RAM durante __init__ para
-    eliminar I/O de disco durante el entrenamiento.
+    Maneja la carga de metadatos comunes (splits, labels, antibiotic_index)
+    y delega la carga de datos genómicos específicos a las subclases.
     """
 
     def __init__(self, data_dir: str | Path, split: str) -> None:
         """
-        Inicializa el dataset cargando etiquetas, splits y vectores genómicos.
+        Inicializa el dataset cargando metadatos comunes.
 
         Parámetros:
-            data_dir: directorio con los outputs del pipeline (splits.csv,
-                      cleaned_labels.csv, antibiotic_index.csv, mlp/)
-            split: partición a cargar ("train", "val" o "test")
+            data_dir: directorio con los outputs del pipeline.
+            split: partición a cargar ("train", "val" o "test").
         """
         data_dir = Path(data_dir)
         self._split = split
@@ -56,13 +50,8 @@ class AMRDataset(Dataset):
         )
         self.n_antibiotics = len(self._antibiotic_to_idx)
 
-        # Pre-cargar vectores genómicos en RAM (un tensor por genome_id)
-        mlp_dir = data_dir / "mlp"
-        genome_vectors: dict[str, torch.Tensor] = {}
-        for gid in split_ids:
-            npy_path = mlp_dir / f"{gid}.npy"
-            vec = numpy.load(npy_path)
-            genome_vectors[gid] = torch.from_numpy(vec).float()
+        # Delegar la carga de datos genómicos a la subclase
+        genome_data = self._load_genome_data(data_dir, split_ids)
 
         # Construir listas de muestras
         self._vectors: list[torch.Tensor] = []
@@ -70,30 +59,32 @@ class AMRDataset(Dataset):
         self._labels: list[float] = []
 
         for _, row in labels.iterrows():
-            self._vectors.append(genome_vectors[row["genome_id"]])
+            self._vectors.append(genome_data[row["genome_id"]])
             self._antibiotic_idxs.append(self._antibiotic_to_idx[row["antibiotic"]])
             self._labels.append(
                 1.0 if row["resistant_phenotype"] == "Resistant" else 0.0
             )
 
+    @abstractmethod
+    def _load_genome_data(
+        self, data_dir: Path, split_ids: set[str]
+    ) -> dict[str, torch.Tensor]:
+        """Carga los datos genómicos específicos del modelo."""
+        pass
+
     def __len__(self) -> int:
         return len(self._labels)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Devuelve (genome_vector, antibiotic_idx, label) como tensores CPU."""
-        return (
-            self._vectors[idx],
-            torch.tensor(self._antibiotic_idxs[idx], dtype=torch.long),
-            torch.tensor(self._labels[idx], dtype=torch.float32),
-        )
+        """Devuelve (genome_data, antibiotic_idx, label) como tensores CPU."""
+        genome_tensor = self._vectors[idx]
+        ab_idx = torch.tensor(self._antibiotic_idxs[idx], dtype=torch.long)
+        label = torch.tensor(self._labels[idx], dtype=torch.float32)
+        return genome_tensor, ab_idx, label
 
     @staticmethod
     def load_pos_weight(data_dir: str | Path) -> float:
-        """
-        Lee pos_weight desde train_stats.json generado por el pipeline.
-
-        Retorna n_susceptible / n_resistant para usar en BCEWithLogitsLoss.
-        """
+        """Lee pos_weight desde train_stats.json."""
         stats_path = Path(data_dir) / "train_stats.json"
         stats = json.loads(stats_path.read_text())
         return stats["pos_weight"]

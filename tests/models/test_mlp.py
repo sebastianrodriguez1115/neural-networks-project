@@ -9,7 +9,7 @@ import pandas
 import pytest
 
 from data_pipeline.constants import TOTAL_KMER_DIM
-from mlp_model import AMRMLP, ANTIBIOTIC_EMBEDDING_DIM
+from models.mlp.model import AMRMLP, ANTIBIOTIC_EMBEDDING_DIM
 
 
 _N_ANTIBIOTICS = 10

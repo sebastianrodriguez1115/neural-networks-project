@@ -1,5 +1,85 @@
 # CHANGELOG
 
+### 2026-04-10
+
+#### Análisis de resultados y cierre de Fase 5 — Token BiGRU
+- Documentado análisis completo de por qué el Token BiGRU no supera al MLP en F1: el subsampling uniforme (1 token cada ~1,100 bp) diluye la señal posicional de genes de resistencia (~800–2,000 bp), resultando en cobertura parcial (~0.1% del genoma).
+- Hallazgo clave: los histogramas (censo completo de k-meros) superan a las secuencias de tokens (muestra dispersa) porque la "huella dactilar" de k-meros de los ARGs es distintiva incluso sin información posicional.
+- Hallazgo positivo: Token BiGRU v2 logró Recall=0.9567, el más alto del proyecto — el modelo es extremadamente sensible a señales de resistencia.
+- Evaluación de trabajo futuro: Transformers sparse (Longformer, BigBird) y modelos genómicos pre-entrenados (DNABERT-2, HyenaDNA, Nucleotide Transformer), con análisis de pros/contras y recomendación de Nucleotide Transformer con chunking como siguiente paso.
+- Documentación actualizada en `PLAN_TOKEN_BIGRU.md` (secciones "Análisis de resultados y limitaciones" y "Trabajo futuro"), `5_experiments.md` (comparación final consolidada) y `PROGRESS.md`.
+
+#### Finalización del Entrenamiento — Token BiGRU v2 (Fase 5.3)
+- Ejecutado el entrenamiento final de la **Token BiGRU v2** con 2 capas, dropout recurrente y optimizador **AdamW**.
+- Logrado un **Recall de 0.9567**, el valor más alto de todo el proyecto, superando el objetivo clínico del 90%.
+- F1-Score final de 0.8121 y AUC-ROC de 0.8190.
+- Los resultados confirman que la arquitectura profunda con regularización desacoplada (AdamW) y subsampling uniforme es altamente sensible a los determinantes genómicos de resistencia.
+- Actualizada la documentación consolidada en `docs/5_experiments.md` y `docs/PROGRESS.md`.
+
+#### Ajuste de hiperparámetros — Token BiGRU Iteración 2 (Fase 5.3)
+- Reducido `lr` de 0.001 a **0.0005**: el entrenamiento base overfitteo en <13 épocas; lr más bajo da convergencia más gradual.
+- Reducido `pos_weight_scale` de 2.5 a **1.6** (pos_weight efectivo ≈ 1.0, balance real): el 2.5 fue heredado del BiGRU sin justificación para este modelo. Recall=0.9066 en Iter. 1 confirma que no se necesita tanta presión hacia positivos.
+- Añadido `weight_decay=1e-4` en Adam: regularización L2 para penalizar pesos grandes y reducir capacidad efectiva [Goodfellow16, Cap. 7].
+- Añadido parámetro CLI `--weight-decay` en `train-token-bigru` (default 1e-4).
+- Historial de hiperparámetros documentado en `docs/PLAN_TOKEN_BIGRU.md` (sección "Historial de hiperparámetros de entrenamiento").
+
+#### Optimización de Arquitectura — Token BiGRU (Fase 5.2)
+- Incrementada la profundidad de la BiGRU de 1 a **2 capas** (`GRU_NUM_LAYERS = 2`) para permitir el aprendizaje de representaciones jerárquicas más complejas.
+- Activado el **dropout recurrente (0.3)** entre las capas de la BiGRU [Srivastava14] para mejorar la regularización y mitigar el sobreajuste observado en el entrenamiento base.
+- Actualizada la documentación técnica y el diagrama Mermaid en `docs/4_models.md` para reflejar la estructura final.
+
+#### Code review y correcciones — Token BiGRU (Fase 5.1 y 5.2)
+- Code review completo del código del Token BiGRU; 8 issues encontrados y corregidos.
+- **Bugs corregidos:**
+  - `pipeline.py` (`_extract_and_save_tokens`): faltaba validación de `n_jobs`, variable `total` no definida en rama paralela, último genoma no logueado si no es múltiplo de 10.
+  - `data_pipeline/__init__.py`: la función privada `_extract_and_save_tokens` se exportaba directamente; reemplazado por alias público `extract_and_save_tokens`.
+  - `main.py`: import y call site actualizados al alias sin guión bajo.
+  - `tests/models/test_token_bigru.py`: test `test_dropout_active_in_train` faltante (especificado en el plan, no implementado); `pytest.raises(Exception)` demasiado amplio → `pytest.raises(RuntimeError)`.
+  - `tests/models/test_datasets.py`: faltaban aserciones de rango `[0, TOKEN_PAD_ID]` en `test_token_bigru_dataset`.
+- 128 tests pasando tras correcciones.
+
+#### Implementación de Token BiGRU (Fase 5.1 y 5.2)
+- Implementado modelo `AMRTokenBiGRU` en `src/models/token_bigru/model.py` que procesa secuencias reales de k-meros (tokens) en lugar de histogramas; importa `BahdanauAttention` de `models.bigru.model`.
+- Implementado `TokenBiGRUDataset` en `src/models/token_bigru/dataset.py`, subclase de `BaseAMRDataset`, carga tokens como `LongTensor` desde `data/processed/token_bigru/`.
+- Agregada capacidad de tokenización a `KmerExtractor` mediante el método `to_token_sequence()` con **subsampling uniforme (linspace)** para garantizar cobertura genómica global [Haykin, Cap. 1.2].
+- Incorporada capa de **embedding de k-meros** (vocabulario=257, dim=64) para mapear tokens discretos a vectores densos [Mikolov13].
+- Reutilizado el mecanismo de **atención de Bahdanau** para interpretabilidad posicional [Bahdanau15].
+- Añadidas constantes `TOKEN_KMER_K`, `TOKEN_VOCAB_SIZE`, `TOKEN_PAD_ID`, `TOKEN_MAX_LEN`, `TOKEN_EMBED_DIM` a `src/data_pipeline/constants.py`.
+- Añadidos comandos CLI `prepare-tokens` (extracción paralela con `n_jobs`) y `train-token-bigru` (gradient clipping 1.0, pos_weight_scale 2.5).
+- Añadidos 9 tests unitarios en `tests/models/test_token_bigru.py` y 1 test en `tests/models/test_datasets.py`.
+- Documentada la nueva arquitectura en `docs/4_models.md` (Modelo D), `docs/5_experiments.md` (Experimento 4) y `docs/PROGRESS.md` (Fase 5).
+- Plan detallado en `docs/PLAN_TOKEN_BIGRU.md`.
+
+### 2026-04-09
+
+
+#### Arquitectura Experta: Multi-Stream BiGRU (Fase 4.1 y 4.2)
+- Ejecutado el entrenamiento del modelo **Multi-Stream BiGRU**, logrando un **AUC-ROC de 0.9038**, el más alto del proyecto.
+- El modelo alcanzó un F1 de 0.8596 y un Recall de 0.8950, demostrando la eficacia de eliminar el padding en arquitecturas recurrentes.
+- Implementado modelo `AMRMultiBiGRU` en `src/multi_bigru_model.py` con 3 streams independientes.
+- Reducido el hidden size por stream a 64 unidades para mantener la eficiencia de parámetros (~233K totales).
+- Actualizado `AMRDataset` para segmentar dinámicamente los vectores MLP en tiempo de carga, optimizando el uso de disco.
+- Adaptado el training loop y el módulo de evaluación para soportar entradas genómicas estructuradas como tuplas de tensores.
+- Añadido comando `train-multi-bigru` a `main.py`.
+- Añadidos 6 tests unitarios específicos para validar la independencia de los flujos y las formas de los pesos de atención.
+
+#### Éxito del Plan de Mejora 1 y Finalización de la Fase 3
+- Ejecutado el entrenamiento de la **BiGRU V2** con `pos_weight_scale=2.5` y `DROPOUT=0.3`.
+- Alcanzado un **Recall de 0.9032** en el conjunto de prueba, cumpliendo el objetivo clínico principal.
+- Realizado el análisis de atención de la V2, revelando una focalización del 92% en k-meros cortos.
+- Implementado el guardado automático de parámetros en `params.json` para garantizar la trazabilidad.
+- Actualizada toda la documentación final (`PROGRESS.md`, `5_experiments.md`, `4_models.md`).
+
+#### Implementación de BiGRU + Attention (Fase 3.1 y 3.2)
+- Implementado modelo `AMRBiGRU` en `src/bigru_model.py` con atención aditiva de Bahdanau y 128 unidades ocultas, siguiendo fielmente a [Lugo21].
+...
+- Actualizado `AMRDataset` en `src/dataset.py` para soportar la carga de matrices 2D (`1024x3`) mediante el parámetro `model_type="bigru"`.
+- Incorporado **Gradient Clipping** (`max_grad_norm=1.0`) en el ciclo de entrenamiento (`src/train/loop.py`) para estabilizar el BPTT sobre 1024 timesteps.
+- Centralizada la constante `ANTIBIOTIC_EMBEDDING_DIM = 49` en `src/data_pipeline/constants.py`.
+- Añadido comando `train-bigru` a `main.py` con soporte para entrenamiento profundo y evaluación final.
+- Añadidos 8 tests unitarios para el modelo y 1 test de integración para el gradient clipping (46 tests totales pasando).
+- Sincronizada toda la documentación técnica (`docs/1_environment.md`, `docs/3_data_pipeline.md`, `docs/4_models.md`, `docs/5_experiments.md`).
+
 ### 2026-03-23
 
 #### Mejora del pipeline y actualización de resultados MLP

@@ -73,17 +73,66 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 ## Fase 3 — Deep NN: BiGRU + Attention (Entrega final)
 
 ### 3.1 Modelo
-- [ ] `AMRBiGRU` (`src/bigru_model.py`): input `[batch, 1024, 3]` → BiGRU(hidden=128) → Bahdanau attention → context `[batch, 256]` + antibiotic embedding → Dense → Dense(1)
+- [x] `AMRBiGRU` (`src/bigru_model.py`): input `[batch, 1024, 3]` → BiGRU(hidden=128) → Bahdanau attention → context `[batch, 256]` + antibiotic embedding → Dense → Dense(1)
+- [x] Soporte para Gradient Clipping [Pascanu13] en el loop de entrenamiento.
+- [x] Optimización del modelo (V2): Ajuste de Dropout (0.3) y función de pérdida asimétrica.
 
 ### 3.2 Entrenamiento
-- [ ] Adaptar `AMRDataset` para cargar matrices BiGRU (`bigru/*.npy`)
-- [ ] Comando `train-bigru` en `main.py`
+- [x] Adaptar `AMRDataset` para cargar matrices BiGRU (`bigru/*.npy`)
+- [x] Comando `train-bigru` en `main.py`
+- [x] 46 unit tests pasando (`tests/test_dataset.py`, `tests/test_bigru.py`, `tests/test_train.py`)
 
 ### 3.3 Comparación y reporte final
-- [ ] Entrenar y evaluar BiGRU + Attention sobre dataset completo
-- [ ] Comparación MLP vs BiGRU: métricas en test, matrices de confusión, análisis de pesos de atención
-- [ ] Criterio de éxito: F1 ≥ 0.85 y recall ≥ 0.90 en clase resistente
-- [ ] Reporte final consolidado
+- [x] Entrenar y evaluar BiGRU + Attention sobre dataset completo
+- [x] Comparación MLP vs BiGRU: métricas en test, matrices de confusión, análisis de pesos de atención
+- [x] Criterio de éxito: F1 ≥ 0.85 y recall ≥ 0.90 en clase resistente (Cumplido con BiGRU V2)
+- [x] Reporte final consolidado (en `docs/5_experiments.md` y `results/bigru_v2/OUTPUT.txt`)
+
+---
+
+## Fase 4 — Arquitectura Experta: Multi-Stream BiGRU
+
+### 4.1 Modelo
+- [x] `AMRMultiBiGRU` (`src/multi_bigru_model.py`): 3 streams (k=3,4,5) → BiGRU(hidden=64) → Attention → Concatenación → Dense → Dense(1)
+- [x] Soporte para inputs tipo tupla en training loop y evaluación.
+
+### 4.2 Entrenamiento
+- [x] Segmentación dinámica de vectores MLP en `AMRDataset`.
+- [x] Comando `train-multi-bigru` en `main.py`.
+- [x] 46 unit tests pasando (incluyendo `tests/test_multi_bigru.py`).
+
+### 4.3 Experimento final
+- [x] Entrenar y evaluar Multi-Stream BiGRU
+- [x] Comparación definitiva: MLP vs BiGRU vs Multi-Stream BiGRU
+- [x] Reporte de interpretabilidad multiescala (en `results/multi_bigru/OUTPUT.txt`)
+
+---
+
+## Fase 5 — Token BiGRU: Secuenciación Real de k-meros
+
+### 5.1 Pipeline de tokenización
+- [x] `KmerExtractor.to_token_sequence()`: extracción de tokens (IDs de 2 bits) con subsampling uniforme (linspace) para cobertura global [Haykin, Cap. 1.2].
+- [x] Comando `prepare-tokens` en `main.py`: extracción paralela y guardado en `data/processed/token_bigru/`.
+- [x] `AMRDataset` modificado para cargar tokens como tensores `long` [Mikolov13].
+
+### 5.2 Modelo
+- [x] `AMRTokenBiGRU` (`src/models/token_bigru/model.py`): input `[batch, 4096]` (IDs) → Embedding(257, 64) → BiGRU(128, layers=2, dropout=0.3) → Bahdanau attention → context `[batch, 256]` + antibiotic embedding → MLP → Logit.
+- [x] `TokenBiGRUDataset` (`src/models/token_bigru/dataset.py`): subclase de `BaseAMRDataset`, carga tokens como `LongTensor`.
+- [x] Reutilización de `BahdanauAttention` de `models.bigru.model`.
+- [x] 10 unit tests pasando (`tests/models/test_token_bigru.py` + `tests/models/test_datasets.py`). 128 totales.
+
+### 5.3 Entrenamiento y evaluación
+
+**Iteración 1** — configuración base (lr=0.001, pos_weight_scale=2.5, GRU 1 capa, sin weight decay):
+- [x] Comando `train-token-bigru` en `main.py` con gradient clipping (1.0) y pos_weight_scale (2.5).
+- [x] Entrenar y evaluar Token BiGRU — F1=0.8165, Recall=0.9066, AUC=0.8251. Early stopping en época 13.
+- [x] Diagnóstico: overfitting severo desde época 1. train_loss=0.32 vs val_loss=1.02 en época 13; mejor val F1 (0.809) en época 1.
+
+**Iteración 2** — corrección de overfitting:
+- [x] Cambios respecto a iter. 1: GRU 2 capas + dropout recurrente (0.3) entre capas, lr=0.0005, pos_weight_scale=1.6, weight_decay=1e-4. Parámetros: 537K (vs 240K en iter. 1).
+- [x] Re-entrenamiento y evaluación: F1=0.8121, **Recall=0.9567**, AUC=0.8190.
+- [x] Análisis de limitaciones: el subsampling uniforme (1 token/~1,100 bp) diluye la señal posicional de genes de resistencia (~800-2,000 bp), explicando por qué los histogramas (censo completo) superan a los tokens (muestra dispersa) en F1. Documentado en `PLAN_TOKEN_BIGRU.md`.
+- [x] Análisis de trabajo futuro: evaluación de Transformers sparse y modelos genómicos pre-entrenados (DNABERT-2, HyenaDNA, Nucleotide Transformer). Documentado en `PLAN_TOKEN_BIGRU.md` y `5_experiments.md`.
 
 ---
 
@@ -96,4 +145,4 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] *Enterobacter spp.* ausente del dataset — excluido por requerir doble consulta (primero genomas, luego AMR) dado que la API de BV-BRC no soporta filtrar por linaje en el endpoint de AMR, añadiendo complejidad innecesaria.
 
 ### Pendientes
-- Ninguna.
+- [ ] Descargar `docs/reference/schuster1997_birnn.pdf` — Schuster & Paliwal (1997), "Bidirectional Recurrent Neural Networks", IEEE. Requiere credenciales universitarias. URL: https://ieeexplore.ieee.org/document/650093
