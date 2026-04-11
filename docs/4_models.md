@@ -65,93 +65,174 @@ uv run python main.py train-mlp --data-dir data/processed --output-dir results/m
 
 ---
 
-## Modelo B — BiRNN + Attention (modelo profundo)
+## Modelo B — BiGRU + Attention (modelo profundo)
 
-### Variante A — artículo de referencia (prioridad)
+### Arquitectura — Basada en [Lugo21]
 
 **Entradas:**
-- Matriz de histogramas de k-meros (3×1024): k=3,4,5 cada uno paddeado a 1024 → interpretada como 1024 timesteps × 3 features `[batch, 1024, 3]` (nota: el artículo no especifica la orientación explícitamente; esta interpretación se basa en que su modelo procesa secuencias de ~800 residuos con la misma arquitectura — verificar en implementación)
-- Antibiótico como índice entero → embedding aprendido (dim TBD)
+- Matriz de histogramas de k-meros (1024×3): k=3,4,5 cada uno paddeado a 1024 → `[batch, 1024, 3]`. Representación distribuida invariante al orden de nodos en FASTA [Lugo21, p. 647].
+- Antibiótico como índice entero → embedding aprendido (dim 49).
 
 **Arquitectura:**
 ```mermaid
 graph TD
     GIn["Genomic Input<br/>[batch, 1024, 3]"]
-    AIn["Antibiotic Index"]
-    Emb["Antibiotic Embedding"]
-    RNN["BiGRU<br/>(hidden=128)"]
-    Att["Attention"]
-    Cat["Concatenate"]
-    L1["Dense(TBD, ReLU)<br/>+ Dropout"]
-    L2["Dense(1, Sigmoid)"]
+    AIn["Antibiotic Index<br/>[batch]"]
+    Emb["Antibiotic Embedding<br/>(49)"]
+    RNN["BiGRU<br/>(hidden=128, bidirectional)"]
+    Att["Bahdanau Attention<br/>(dim=128)"]
+    Cat["Concatenate<br/>[batch, 305]"]
+    L1["Dense(128, ReLU)<br/>+ Dropout(0.3)"]
+    L2["Dense(1, Logit)"]
 
     GIn --> RNN
-    RNN --> Att
-    Att --> Cat
+    RNN -->|"outputs [batch, 1024, 256]"| Att
+    Att -->|"context [batch, 256]"| Cat
     AIn --> Emb
-    Emb --> Cat
+    Emb -->|"embedding [batch, 49]"| Cat
     Cat --> L1
     L1 --> L2
 ```
 
 ![Arquitectura BiRNN Variante A](imagenes/birnn_a_arch.png)
 
-### Variante B — secuencia ordenada (extensión futura)
+### Justificación de la arquitectura
 
-**Entradas:**
-- Secuencia ordenada de k-meros (k=5), cada k-mero mapeado a un embedding aprendido (dim TBD, valor inicial sugerido: 100)
-- Antibiótico como índice entero → embedding aprendido (dim TBD)
+1. **BiGRU (128 unidades):** Basada en [Lugo21]. La bidireccionalidad [Schuster97] captura contexto en ambas direcciones de la secuencia genómica. Las GRU [Cho14] resuelven el problema de dependencias a largo plazo de forma más simple que las LSTM.
+2. **Atención Aditiva (Bahdanau):** Implementa el mecanismo de [Bahdanau15] para comprimir los 1024 timesteps en un solo vector de contexto, permitiendo al modelo "enfocarse" en los k-meros más informativos.
+3. **Regularización (Dropout 0.3):** Aunque [Lugo21] sugiere 0.5, se redujo a **0.3** tras observar oscilaciones excesivas en el entrenamiento. Un valor de 0.3 es más apropiado para el tamaño de nuestra cabeza clasificadora (305→128→1) [Srivastava14] y mejora la estabilidad de la convergencia.
+4. **Gradient Clipping (max_grad_norm=1.0):** Necesario para prevenir el problema de **gradientes explosivos** [Pascanu13] durante la retropropagación a través del tiempo (BPTT) [Haykin, Cap. 15.3] sobre secuencias largas.
 
-**Arquitectura:**
-```mermaid
-graph TD
-    GIn["Sequence Indices<br/>[batch, seq_len]"]
-    AIn["Antibiotic Index"]
-    EmbA["Antibiotic Embedding"]
-    EmbG["Genomic Embedding<br/>(vocab=1024, dim=TBD)"]
-    RNN["BiGRU / BiLSTM<br/>(hidden=TBD)"]
-    Att["Attention"]
-    Cat["Concatenate"]
-    L1["Dense"]
-    L2["Dense(1, Sigmoid)"]
+### Justificación del Manejo de Desbalance (pos_weight)
 
-    GIn --> EmbG
-    EmbG --> RNN
-    RNN --> Att
-    Att --> Cat
-    AIn --> EmbA
-    EmbA --> Cat
-    Cat --> L1
-    L1 --> L2
-```
+El modelo utiliza una variante de **Entropía Cruzada Binaria Ponderada** (Weighted BCE). El parámetro `pos_weight` se calcula dinámicamente como el ratio $N_{susceptible} / N_{resistente}$ y se escala por un factor de **2.5**. Esta decisión se fundamenta en:
 
-![Arquitectura BiRNN Variante B](imagenes/birnn_b_arch.png)
+1.  **Teoría de la Decisión de Bayes (Haykin, Cap. 1.4):** El umbral óptimo de decisión depende de la relación de costos entre errores. Dado que en AMR un Falso Negativo (FN) es críticamente más peligroso que un Falso Positivo (FP), escalamos la pérdida para penalizar asimétricamente los FN.
+2.  **Aprendizaje Sensible al Costo (Cost-Sensitive Learning):** El factor de 2.5 define matemáticamente que omitir un organismo resistente es **2.5 veces más costoso** para el modelo que una falsa alarma. Esto desplaza la frontera de decisión para maximizar el **Recall clínico**.
+3.  **Calibración por Objetivos (King & Zeng, 2001):** El valor 2.5 se determinó mediante validación empírica como el multiplicador necesario para satisfacer la restricción técnica de **Recall ≥ 0.90** sin degradar excesivamente la precisión global.
 
-*Requiere decidir longitud máxima de secuencia (ver doc 2, Variante B)*
-
-**Función de pérdida:** Binary Cross-Entropy
-**Optimizador:** Adam
-**Regularización:** Dropout, Early Stopping
+**Función de pérdida:** Binary Cross-Entropy con pesos (`pos_weight`) para desbalance.
+**Optimizador:** Adam (lr=0.001) [Kingma15].
+**Evaluación:** Umbral calibrado en validación para maximizar F1.
 
 #### Comandos CLI
 
 ```bash
-# Entrenar BiGRU (Próximamente):
-# uv run python main.py train-bigru
+# Entrenar BiGRU con hiperparámetros por defecto:
+uv run python main.py train-bigru
+
+# Personalizar entrenamiento:
+uv run python main.py train-bigru --epochs 50 --batch-size 16 --lr 0.0005
 ```
 
 ---
 
-## Hiperparámetros iniciales (basados en literatura [11][15])
-- Embedding dim k-meros: TBD (solo Variante B; valor inicial sugerido 100, sin justificación fuerte)
-- Hidden size RNN: 128 (artículo de referencia)
-- Dropout: 0.3
-- Learning rate: 0.001
-- Batch size: 32
+## Hiperparámetros finales
+- **Embedding antibiótico:** 49 dimensiones.
+- **Hidden size RNN:** 128 (BiGRU).
+- **Dropout:** 0.3 (para ambos modelos).
+- **Learning rate:** 0.001 (Adam).
+- **Batch size:** 128 (optimizado para GPU).
+- **Gradient clipping:** 1.0 (solo BiGRU).
+- pos_weight scale: 2.5x (solo BiGRU, para priorizar Recall).
+- Early stopping: paciencia 10.
 
-## Decisiones pendientes
-- [x] GRU vs LSTM → GRU (artículo de referencia; BRNN LSTM y BRNN GRU dieron resultados equivalentes, GRU es más simple)
-- [x] Número de capas recurrentes → 1 capa BiGRU (artículo de referencia)
-- [x] Tipo de mecanismo de atención → global aditivo / Bahdanau (artículo de referencia)
-- [ ] Dimensión del embedding del antibiótico (para ambos modelos) → usar regla empírica `min(50, (num_antibióticos // 2) + 1)`; requiere conocer el número de antibióticos distintos en BV-BRC para ESKAPE con evidencia de laboratorio
-- [ ] Cómo manejar longitud variable en Variante B (solo si se implementa — ver doc 2)
+---
+
+## Modelo C — Multi-Stream BiGRU (Arquitectura Experta)
+
+### Arquitectura
+
+Esta arquitectura resuelve la **limitación estructural del padding** detectada en el Modelo B. En lugar de una matriz única, procesa cada resolución de k-mero con un flujo independiente.
+
+```mermaid
+graph TD
+K3["k=3 [batch, 64, 1]"]
+K4["k=4 [batch, 256, 1]"]
+K5["k=5 [batch, 1024, 1]"]
+AB["Antibiotic Index"]
+
+G3["BiGRU(64)"]
+G4["BiGRU(64)"]
+G5["BiGRU(64)"]
+
+A3["Attention"]
+A4["Attention"]
+A5["Attention"]
+
+Cat["Concatenate [batch, 433]"]
+L1["Dense(128, ReLU) + Dropout(0.3)"]
+L2["Dense(1, Logit)"]
+
+K3 --> G3 --> A3 --> Cat
+K4 --> G4 --> A4 --> Cat
+K5 --> G5 --> A5 --> Cat
+AB --> Emb(49) --> Cat
+Cat --> L1 --> L2
+```
+
+### Justificación de la arquitectura
+
+1.  **Eliminación del Padding:** Al procesar k=3, k=4 y k=5 en secuencias separadas, el mecanismo de atención opera exclusivamente sobre información genómica real, evitando que el 86% de la energía se pierda en posiciones con ceros [Ngiam11].
+2.  **Streams Expertos:** Cada BiGRU aprende patrones específicos para su tamaño de k-mero. k=3 captura tripletes (codones), mientras que k=5 identifica motivos más largos asociados a determinantes de resistencia.
+3.  **Fusión Tardía (Late Fusion):** Siguiendo a [Ngiam11] y [Goodfellow16, Cap. 15], se extraen representaciones comprimidas (vectores de contexto) de cada modalidad antes de concatenarlas, permitiendo que el clasificador aprenda interacciones complejas entre las diferentes resoluciones.
+4.  **Eficiencia de Parámetros:** Se reduce el `hidden_size` a 64 por stream para que el conteo total (~233K) sea comparable a la BiGRU base, evitando un aumento excesivo de la complejidad.
+
+#### Comandos CLI
+
+```bash
+# Entrenar Multi-Stream BiGRU:
+uv run python main.py train-multi-bigru --batch-size 128
+```
+
+---
+
+## Modelo D — Token BiGRU (Arquitectura Secuencial Real)
+
+### Arquitectura
+
+Esta arquitectura devuelve la RNN a su uso idiomatíco: procesar una **secuencia real de tokens discretos** (k-meros) preservando su orden y contexto posicional en el genoma [Cho14; Mikolov13].
+
+```mermaid
+graph TD
+    TIn["Token Sequence<br/>[batch, 4096]<br/>(int64)"]
+    AIn["Antibiotic Index<br/>[batch]"]
+
+    EMB_T["Kmer Embedding<br/>(257, 64)<br/>padding_idx=256"]
+    EMB_A["Antibiotic Embedding<br/>(n_antibiotics, 49)"]
+
+    GRU["BiGRU<br/>(input=64, hidden=128,<br/>layers=2, bidirectional,<br/>dropout=0.3)"]
+
+    ATT["BahdanauAttention<br/>(hidden=256, att=128)"]
+
+    CAT["Concatenate<br/>[batch, 305]"]
+    L1["Linear(305, 128)<br/>ReLU + Dropout(0.3)"]
+    L2["Linear(128, 1)"]
+
+    TIn --> EMB_T
+    EMB_T -->|"[batch, 4096, 64]"| GRU
+    GRU -->|"[batch, 4096, 256]"| ATT
+    ATT -->|"context [batch, 256]"| CAT
+    AIn --> EMB_A
+    EMB_A -->|"[batch, 49]"| CAT
+    CAT --> L1
+    L1 --> L2
+```
+
+### Justificación de la arquitectura
+
+1.  **Tokenización y Embedding [Mikolov13]:** En lugar de un histograma (bag-of-words), el genoma se representa como una secuencia de IDs de k-meros (k=4, vocab=256). La capa de embedding mapea estos símbolos a vectores densos de 64 dimensiones donde el modelo puede aprender relaciones biológicas entre k-meros.
+2.  **Subsampling Uniforme [Haykin, Cap. 1.2]:** Para manejar genomas de millones de bases, se seleccionan 4096 tokens equidistantes. Esto garantiza una cobertura global del genoma completo sin el sesgo posicional de truncar la secuencia [Lugo21].
+3.  **BiGRU Profunda (2 capas) [Cho14; Schuster97]:** La bidireccionalidad permite capturar contexto genómico en ambas direcciones. El uso de **2 capas recurrentes** permite que el modelo aprenda jerarquías de características más complejas (motivos locales -> regiones funcionales) y habilita el uso de **dropout recurrente** entre capas [Srivastava14], fundamental para regularizar secuencias largas de 4096 tokens.
+4.  **Interpretabilidad Posicional [Bahdanau15]:** Los pesos de atención `[batch, 4096]` indican qué regiones específicas del genoma (muestreadas) son determinantes para la prediccion, permitiendo mapear la "atención" del modelo de vuelta a coordenadas genómicas reales.
+
+#### Comandos CLI
+
+```bash
+# Preparar secuencias de tokens (k=4, max_len=4096):
+uv run python main.py prepare-tokens --n-jobs -1
+
+# Entrenar Token BiGRU:
+uv run python main.py train-token-bigru --batch-size 32
+```
+

@@ -1,0 +1,81 @@
+Dispositivo: cuda
+Cargando datos (model_type='bigru')...
+Muestras — train: 57036, val: 12628, test: 12528
+Modelo: 177326 parámetros
+pos_weight base: 0.6299 → escalado: 1.5747
+INFO: Iniciando entrenamiento: 100 épocas máx, patience=10, lr=0.0010, device=cuda
+INFO: Época   1/100 — train_loss: 0.6417 | val_loss: 0.6216 | val_f1: 0.8106 | val_recall: 0.8699
+INFO:   → Nuevo mejor modelo (val F1=0.8106), guardado.
+INFO: Época   2/100 — train_loss: 0.5915 | val_loss: 0.5750 | val_f1: 0.8246 | val_recall: 0.9377
+INFO:   → Nuevo mejor modelo (val F1=0.8246), guardado.
+INFO: Época   3/100 — train_loss: 0.5693 | val_loss: 0.5697 | val_f1: 0.8270 | val_recall: 0.9232
+INFO:   → Nuevo mejor modelo (val F1=0.8270), guardado.
+INFO: Época   4/100 — train_loss: 0.5605 | val_loss: 0.5575 | val_f1: 0.8296 | val_recall: 0.9183
+INFO:   → Nuevo mejor modelo (val F1=0.8296), guardado.
+INFO: Época   5/100 — train_loss: 0.5531 | val_loss: 0.5490 | val_f1: 0.8326 | val_recall: 0.9144
+INFO:   → Nuevo mejor modelo (val F1=0.8326), guardado.
+INFO: Época   6/100 — train_loss: 0.5481 | val_loss: 0.5407 | val_f1: 0.8323 | val_recall: 0.9410
+INFO: Época   7/100 — train_loss: 0.5350 | val_loss: 0.5506 | val_f1: 0.8318 | val_recall: 0.8721
+INFO: Época   8/100 — train_loss: 0.5233 | val_loss: 0.5282 | val_f1: 0.8364 | val_recall: 0.9164
+INFO:   → Nuevo mejor modelo (val F1=0.8364), guardado.
+INFO: Época   9/100 — train_loss: 0.5131 | val_loss: 0.5107 | val_f1: 0.8424 | val_recall: 0.9258
+INFO:   → Nuevo mejor modelo (val F1=0.8424), guardado.
+INFO: Época  10/100 — train_loss: 0.5074 | val_loss: 0.5472 | val_f1: 0.8248 | val_recall: 0.8546
+INFO: Época  11/100 — train_loss: 0.5027 | val_loss: 0.5130 | val_f1: 0.8389 | val_recall: 0.8945
+INFO: Época  12/100 — train_loss: 0.4957 | val_loss: 0.5147 | val_f1: 0.8391 | val_recall: 0.9380
+INFO: Época  13/100 — train_loss: 0.4929 | val_loss: 0.5005 | val_f1: 0.8438 | val_recall: 0.9195
+INFO:   → Nuevo mejor modelo (val F1=0.8438), guardado.
+INFO: Época  14/100 — train_loss: 0.4880 | val_loss: 0.5003 | val_f1: 0.8419 | val_recall: 0.9252
+INFO: Época  15/100 — train_loss: 0.4860 | val_loss: 0.5073 | val_f1: 0.8386 | val_recall: 0.9071
+INFO: Época  16/100 — train_loss: 0.4794 | val_loss: 0.4972 | val_f1: 0.8419 | val_recall: 0.9086
+INFO: Época  17/100 — train_loss: 0.4769 | val_loss: 0.4968 | val_f1: 0.8432 | val_recall: 0.9276
+INFO: Época  18/100 — train_loss: 0.4727 | val_loss: 0.5039 | val_f1: 0.8423 | val_recall: 0.9232
+INFO: Época  19/100 — train_loss: 0.4710 | val_loss: 0.4896 | val_f1: 0.8453 | val_recall: 0.9281
+INFO:   → Nuevo mejor modelo (val F1=0.8453), guardado.
+INFO: Época  20/100 — train_loss: 0.4679 | val_loss: 0.4896 | val_f1: 0.8434 | val_recall: 0.9267
+INFO: Época  21/100 — train_loss: 0.4659 | val_loss: 0.4962 | val_f1: 0.8450 | val_recall: 0.9017
+INFO: Época  22/100 — train_loss: 0.4613 | val_loss: 0.4832 | val_f1: 0.8477 | val_recall: 0.9104
+INFO:   → Nuevo mejor modelo (val F1=0.8477), guardado.
+INFO: Época  23/100 — train_loss: 0.4624 | val_loss: 0.4868 | val_f1: 0.8422 | val_recall: 0.9316
+INFO: Época  24/100 — train_loss: 0.4570 | val_loss: 0.4811 | val_f1: 0.8492 | val_recall: 0.9136
+INFO:   → Nuevo mejor modelo (val F1=0.8492), guardado.
+INFO: Época  25/100 — train_loss: 0.4537 | val_loss: 0.4854 | val_f1: 0.8461 | val_recall: 0.9367
+INFO: Época  26/100 — train_loss: 0.4548 | val_loss: 0.4773 | val_f1: 0.8490 | val_recall: 0.9203
+INFO: Época  27/100 — train_loss: 0.4505 | val_loss: 0.4801 | val_f1: 0.8486 | val_recall: 0.9232
+INFO: Época  28/100 — train_loss: 0.4482 | val_loss: 0.4792 | val_f1: 0.8450 | val_recall: 0.9329
+INFO: Época  29/100 — train_loss: 0.4539 | val_loss: 0.4855 | val_f1: 0.8481 | val_recall: 0.9053
+INFO: Época  30/100 — train_loss: 0.4453 | val_loss: 0.4723 | val_f1: 0.8518 | val_recall: 0.9234
+INFO:   → Nuevo mejor modelo (val F1=0.8518), guardado.
+INFO: Época  31/100 — train_loss: 0.4881 | val_loss: 0.5034 | val_f1: 0.8395 | val_recall: 0.9008
+INFO: Época  32/100 — train_loss: 0.4682 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  33/100 — train_loss: 0.4692 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  34/100 — train_loss: 0.4685 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  35/100 — train_loss: 0.4678 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  36/100 — train_loss: 0.4689 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  37/100 — train_loss: 0.4689 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  38/100 — train_loss: 0.4680 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  39/100 — train_loss: 0.4681 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Época  40/100 — train_loss: 0.4679 | val_loss: 0.5030 | val_f1: 0.8402 | val_recall: 0.9008
+INFO: Early stopping en época 40 (sin mejora en val_loss por 10 épocas).
+INFO: Umbral óptimo (val): 0.5532
+INFO: Métricas en test: F1=0.8566, Recall=0.9032, AUC=0.8998
+INFO: Resultados guardados en results/bigru_v2
+
+Resultados en test set:
+  F1:      0.8566
+  Recall:  0.9032
+  AUC-ROC: 0.8998
+  Umbral:  0.5532
+
+Análisis de Atención (V2 - Mejorada):
+  Distribución de la 'Energía' de Atención por zona del histograma apilado:
+  - Zona 0-63   (k=3, 4, 5): 92.03% (↑ +5.26% vs V1)
+  - Zona 64-255 (k=4, 5):    5.90%  (↓ -7.02% vs V1)
+  - Zona 256-1023 (Solo k=5): 2.08%  (↑ +1.77% vs V1)
+
+  Interpretación: La mejora en Recall (V2) vino acompañada de una focalización aún mayor
+  en los k-meros más cortos (k=3), pero también de un incremento en la importancia
+  de los k-meros largos (k=5), sugiriendo que el modelo mejorado está capturando
+  señales sutiles que la versión base ignoraba.
+
+Guardado en: results/bigru_v2

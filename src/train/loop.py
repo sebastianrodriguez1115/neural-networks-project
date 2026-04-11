@@ -114,6 +114,7 @@ def train_epoch(
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    max_grad_norm: float | None = None,
 ) -> float:
     """
     Ejecuta una época completa de entrenamiento (Haykin, 2009, §4.3–4.4).
@@ -136,7 +137,12 @@ def train_epoch(
 
     for genome, antibiotic_idx, label in loader:
         # Mover datos al dispositivo (GPU/CPU)
-        genome = genome.to(device)
+        # MEJORA: Soporte para multi-stream (tupla de tensores) [Goodfellow16, Cap. 15]
+        if isinstance(genome, (tuple, list)):
+            genome = tuple(g.to(device) for g in genome)
+        else:
+            genome = genome.to(device)
+
         antibiotic_idx = antibiotic_idx.to(device)
         # label shape: [batch] → [batch, 1] para coincidir con la salida del modelo
         label = label.to(device).unsqueeze(1)
@@ -152,6 +158,13 @@ def train_epoch(
 
         # 3. Retropropagación: calcula gradientes ∂E/∂w para cada peso
         loss.backward()
+
+        # Gradient clipping [Pascanu13]: limita la norma L2 del gradiente
+        # global para prevenir la explosión de gradientes en redes recurrentes.
+        # Con BPTT [Haykin, Cap. 15.3] sobre 1024 timesteps, los gradientes
+        # pueden crecer exponencialmente sin esta protección [Goodfellow16, Cap. 10.7].
+        if max_grad_norm is not None:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
 
         # 4. Actualización: Adam ajusta los pesos en dirección del gradiente
         optimizer.step()
@@ -244,6 +257,8 @@ def train(
     epochs: int = 100,
     patience: int = 10,
     output_dir: str | Path = "results/mlp",
+    max_grad_norm: float | None = None,
+    weight_decay: float = 0.0,
 ) -> dict:
     """
     Ciclo completo de entrenamiento con early stopping (Haykin, 2009, §4.13).
@@ -272,6 +287,7 @@ def train(
         criterion: función de pérdida (BCEWithLogitsLoss con pos_weight)
         device: dispositivo de cómputo
         lr: tasa de aprendizaje para Adam (default 0.001)
+        weight_decay: regularización L2 (default 0.0)
         epochs: número máximo de épocas (default 100)
         patience: épocas sin mejora antes de parar (default 10)
         output_dir: directorio para guardar resultados
@@ -284,10 +300,10 @@ def train(
 
     model.to(device)
 
-    # Adam: variante de descenso de gradiente con tasas de aprendizaje
-    # adaptativas por parámetro (Haykin, 2009, §4.16). Combina momentum
-    # con estimación de segundo momento para converger más rápido.
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # AdamW (Loshchilov & Hutter, 2019) desacopla el weight decay del gradiente,
+    # permitiendo una regularización más efectiva. Es la opción preferida
+    # para arquitecturas recurrentes y transformers [Goodfellow16, Cap. 7].
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     # Estado de early stopping y checkpointing
     best_val_loss = float("inf")
@@ -308,7 +324,14 @@ def train(
 
     for epoch in range(1, epochs + 1):
         # --- Entrenamiento ---
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
+        train_loss = train_epoch(
+            model,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
+            max_grad_norm=max_grad_norm,
+        )
 
         # --- Evaluación sobre validación ---
         val_metrics = evaluate(model, val_loader, criterion, device)
@@ -327,12 +350,13 @@ def train(
         history_rows.append(row)
 
         logger.info(
-            "Época %3d/%d — train_loss: %.4f | val_loss: %.4f | val_f1: %.4f",
+            "Época %3d/%d — train_loss: %.4f | val_loss: %.4f | val_f1: %.4f | val_recall: %.4f",
             epoch,
             epochs,
             train_loss,
             val_metrics["loss"],
             val_metrics["f1"],
+            val_metrics["recall"],
         )
 
         # --- Checkpoint: guardar si es el mejor F1 en validación ---

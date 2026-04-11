@@ -22,9 +22,15 @@ src/
 │   ├── evaluate.py
 │   └── loop.py
 │
-├── dataset.py
+├── models/
+│   ├── base_dataset.py
+│   ├── mlp/
+│   ├── bigru/
+│   ├── multi_bigru/
+│   └── token_bigru/
+│
 ├── eda.py
-└── mlp_model.py
+└── README.md
 ```
 
 ## Módulos

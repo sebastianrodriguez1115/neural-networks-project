@@ -17,7 +17,7 @@ from .features import (
     normalize_features,
     split_genomes,
 )
-from .pipeline import run_pipeline
+from .pipeline import run_pipeline, _extract_and_save_tokens as extract_and_save_tokens
 
 __all__ = [
     "LabelCleaner",
@@ -28,6 +28,7 @@ __all__ = [
     "mlp_vector_to_bigru_matrix",
     "split_genomes",
     "run_pipeline",
+    "extract_and_save_tokens",
     "KMER_SIZES",
     "KMER_DIMS",
     "TOTAL_KMER_DIM",

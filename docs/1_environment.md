@@ -19,22 +19,29 @@ proyecto_redes_neuronales/
 │   ├── bvbrc/            # Cliente HTTP para la API REST de BV-BRC
 │   ├── data_pipeline/    # Preprocesamiento: etiquetas, k-meros, splits
 │   ├── train/            # Paquete de entrenamiento: loop.py, evaluate.py
-│   ├── dataset.py        # AMRDataset de PyTorch
+│   ├── models/           # Modelos y datasets modularizados
+│   │   ├── base_dataset.py # Clase base abstracta para datasets
+│   │   ├── mlp/          # Modelo MLP baseline
+│   │   ├── bigru/        # Modelo BiGRU + Attention
+│   │   ├── multi_bigru/  # Arquitectura Multi-Stream
+│   │   └── token_bigru/  # BiGRU sobre secuencia de tokens
 │   ├── eda.py            # Análisis exploratorio (EDA)
-│   ├── mlp_model.py      # Definición del modelo MLP (a futuro bigru_model.py)
 │   └── main.py           # CLI (Typer) — punto de entrada
 ├── tests/
 │   ├── bvbrc/            # Unit tests del paquete bvbrc
 │   ├── data_pipeline/    # Unit tests del data pipeline
-│   └── test_train.py     # Unit tests del paquete de entrenamiento
+│   ├── models/           # Unit tests de modelos y datasets
+│   └── test_train.py     # Unit tests del loop de entrenamiento y métricas
+├── data/
 │   ├── raw/              # Genomas FASTA descargados
-│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy)
+│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy) en subcarpetas mlp/, bigru/ y token_bigru/
 ├── results/              # Métricas, gráficas, checkpoints
 ├── notebooks/            # Exploración y visualización
 ├── docs/
 │   ├── proposal/         # Propuesta del proyecto
 │   ├── reference/        # Referencia técnica (API, etc.)
-│   └── 1–5_*.md          # Documentos de diseño e implementación
+│   └── *.md              # Documentos de diseño, planes y avance
+
 └── main.py               # CLI (Typer) — punto de entrada
 ```
 
@@ -63,7 +70,6 @@ uv sync
   - Nombre personalizado: `uv venv mi_entorno`
 - **Activación:**
   - **Linux/macOS:** `source .venv/bin/activate`
-  - **Windows:** `.venv\Scripts\activate`
 - **Sincronización:** `uv sync` asegura que las librerías instaladas coincidan exactamente con lo definido en `uv.lock`.
 - **Ejecución sin activación:** Puedes correr comandos directamente sin activar el entorno usando `uv run`:
   ```bash
@@ -85,7 +91,11 @@ uv run python main.py --help
 | `eda` | Análisis exploratorio: distribución, balance, outliers, baseline benchmark | `docs/2_eda.md` |
 | `export-contradictions-cmd` | Exporta pares (genome_id, antibiotic) con etiquetas contradictorias a CSV | `docs/2_eda.md` |
 | `prepare-data` | Preprocesamiento completo: limpieza, k-meros, split, normalización | `docs/3_data_pipeline.md` |
+| `prepare-tokens` | Extrae secuencias de tokens para el modelo Token BiGRU | `docs/PLAN_TOKEN_BIGRU.md` |
 | `train-mlp` | Entrena y evalúa el Perceptrón Multicapa (MLP) | `docs/PLAN_MLP.md` |
+| `train-bigru` | Entrena y evalúa la BiGRU + Attention | `docs/PLAN_BIGRU.md` |
+| `train-token-bigru` | Entrena y evalúa la Token BiGRU | `docs/PLAN_TOKEN_BIGRU.md` |
+| `train-multi-bigru` | Entrena y evalúa la Multi-Stream BiGRU | `docs/PLAN_MULTI_BIGRU.md` |
 
 ## Tests
 
@@ -99,3 +109,4 @@ uv run pytest -v
 # Un módulo específico
 uv run pytest tests/bvbrc/test_amr.py -v
 ```
+

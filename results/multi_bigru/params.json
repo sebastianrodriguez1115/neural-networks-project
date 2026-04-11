@@ -1,0 +1,10 @@
+{
+  "model_type": "multi_bigru",
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001,
+  "patience": 10,
+  "pos_weight_scale": 2.5,
+  "max_grad_norm": 1.0,
+  "device": "cuda"
+}

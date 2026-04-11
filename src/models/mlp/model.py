@@ -9,11 +9,7 @@ import pandas
 import torch
 from torch import nn
 
-from data_pipeline.constants import TOTAL_KMER_DIM
-
-# Dimensión del embedding de antibiótico: min(50, (n_antibiotics // 2) + 1)
-# Con 96 antibióticos en el dataset completo → 49. Ver docs/2_eda.md.
-ANTIBIOTIC_EMBEDDING_DIM = 49
+from data_pipeline.constants import ANTIBIOTIC_EMBEDDING_DIM, TOTAL_KMER_DIM
 
 # Arquitectura MLP (docs/4_models.md)
 HIDDEN_1 = 512

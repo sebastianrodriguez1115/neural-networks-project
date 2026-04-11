@@ -12,6 +12,11 @@ from .constants import (
     KMER_DIMS,
     KMER_SIZES,
     RANDOM_SEED,
+    TOKEN_EMBED_DIM,
+    TOKEN_KMER_K,
+    TOKEN_MAX_LEN,
+    TOKEN_PAD_ID,
+    TOKEN_VOCAB_SIZE,
     TRAIN_RATIO,
     VAL_RATIO,
 )
@@ -40,6 +45,62 @@ class KmerExtractor:
         if not self._histograms:
             raise RuntimeError("Call extract() before to_mlp_vector()")
         return numpy.concatenate([self._histograms[k] for k in KMER_SIZES])
+
+    def to_token_sequence(
+        self, k: int = TOKEN_KMER_K, max_len: int = TOKEN_MAX_LEN
+    ) -> numpy.ndarray:
+        """Extrae la secuencia de k-meros como tokens (IDs enteros).
+
+        En lugar de contar frecuencias, emite la secuencia ordenada de k-meros
+        tal como aparecen en el genoma [Mikolov13; Haykin, Cap. 7]. Cada k-mero
+        se codifica con el rolling hash de 2 bits existente [Compeau14].
+
+        Si la secuencia total excede max_len, se submuestrea uniformemente
+        para mantener cobertura del genoma completo [Haykin, Cap. 1.2].
+
+        Parámetros:
+            k: tamaño del k-mero (default 4, vocab = 256)
+            max_len: longitud máxima de la secuencia de salida (default 4096)
+
+        Retorna:
+            numpy.ndarray de shape (max_len,) con dtype int64.
+            Valores en [0, 4^k - 1]. Si el genoma produce menos de max_len
+            tokens, se rellena con un token de padding (4^k).
+        """
+        # 1. Extraer TODOS los tokens del genoma
+        all_tokens = []
+        sequences = self._read_sequences()
+        mask = (4**k) - 1
+        for sequence in sequences:
+            current = 0
+            valid_count = 0
+            for base in sequence:
+                base_index = BASE_TO_INDEX.get(base)
+                if base_index is None:
+                    valid_count = 0
+                    current = 0
+                else:
+                    current = ((current << 2) | base_index) & mask
+                    valid_count += 1
+                    if valid_count >= k:
+                        all_tokens.append(current)
+
+        total = len(all_tokens)
+
+        # 2. Subsampling uniforme o padding
+        if total >= max_len:
+            # Seleccionar max_len posiciones uniformemente distribuidas.
+            # numpy.linspace genera índices equidistantes que cubren todo el genoma.
+            # Esto preserva la cobertura global [Haykin, Cap. 1.2].
+            indices = numpy.linspace(0, total - 1, max_len, dtype=int)
+            tokens = numpy.array(all_tokens, dtype=numpy.int64)[indices]
+        else:
+            # Padding con token especial (4^k) para secuencias cortas.
+            pad_token = 4**k
+            tokens = numpy.full(max_len, pad_token, dtype=numpy.int64)
+            tokens[:total] = all_tokens
+
+        return tokens
 
     def _read_sequences(self) -> list[str]:
         return [

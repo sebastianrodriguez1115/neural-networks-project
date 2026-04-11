@@ -48,8 +48,8 @@ uv run python main.py export-contradictions-cmd --labels data/processed/amr_labe
   - Tamaño del vector: 4³ + 4⁴ + 4⁵ = 64 + 256 + 1024 = 1344 dimensiones
   - Normalizar (media 0, varianza 1)
 - Para la **BiRNN** (dos variantes, implementar en orden):
-  - **Variante A — artículo de referencia (prioridad):** mismos histogramas k=3,4,5 que el MLP, cada histograma paddeado a 1024 y apilado → matriz 3×1024 como input a la BiRNN
-  - **Variante B — secuencia ordenada (extensión):** tokenizar el genoma como secuencia de k-meros con k=5; vocabulario 4⁵=1024 tokens + padding; requiere decidir longitud máxima (truncado, sliding window o submuestreo)
+  - **Variante A — artículo de referencia (prioridad):** mismos histogramas k=3,4,5 que el MLP, cada histograma paddeado a 1024 y apilado → matriz 1024×3 como input a la BiRNN
+  - **Variante B — secuencia ordenada (extensión):** tokenizar el genoma como secuencia de k-meros con k=4; vocabulario 4⁴=256 tokens + padding; longitud fija de 4096 tokens mediante subsampling uniforme.
 
 ### 4. Manejo del desbalance de clases
 - Analizar proporción Resistant/Susceptible en el dataset
