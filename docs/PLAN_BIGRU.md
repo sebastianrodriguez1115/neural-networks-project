@@ -280,8 +280,7 @@ def train(
 **Parámetros basados en [Lugo21], con gradient clipping adicional:**
 - Optimizador: Adam lr=0.001 [Kingma15; Lugo21, p. 649]
 - Loss: `BCEWithLogitsLoss(pos_weight=...)` — mismo `pos_weight` de `train_stats.json` [Haykin, Cap. 1.4]
-- Early stopping: patience=10 sobre val_loss [Haykin, Cap. 4.13; Goodfellow16, Cap. 7.8]
-- Checkpoint: mejor val F1
+- Early stopping y checkpoint: sobre val_F1 (patience configurable) [Haykin, Cap. 4.13; Goodfellow16, Cap. 7.8]
 - Max epochs: 100
 - Batch size: 32 (nota: [Lugo21] usa 128, pero nuestro dataset es más pequeño)
 - **Gradient clipping: `max_grad_norm=1.0`** [Pascanu13] — necesario para BiGRU
@@ -387,7 +386,7 @@ Agregar test para verificar que `max_grad_norm` funciona:
 | Optimizador | Adam lr=0.001 | [Kingma15; Lugo21, p. 649] | **Optimización adaptativa** [Kingma15]: Tasas de aprendizaje por parámetro. |
 | Batch size | 32 | docs/5_experiments.md | **Mini-batch SGD** [Goodfellow16, Cap. 8.1.3]. Nota: [Lugo21] usa 128. |
 | Loss | `BCEWithLogitsLoss` + pos_weight | AGENTS.md | **Teoría de Bayes** [Haykin, Cap. 1.4]: Riesgo promedio ante desbalance. |
-| Early stopping | patience=10, val loss | AGENTS.md | **Generalización** [Haykin, Cap. 4.11; Goodfellow16, Cap. 7.8]: Evitar memorización. |
+| Early stopping | patience configurable, val_F1 | AGENTS.md | **Generalización** [Haykin, Cap. 4.11; Goodfellow16, Cap. 7.8]: Evitar memorización. |
 | Mejor modelo | mayor val F1 | AGENTS.md | **Reconocimiento de Patrones** [Haykin, Cap. 9]: Utilidad clínica. |
 | Semilla | 42 | AGENTS.md | **Reproducibilidad** [Haykin, Cap. 4.4]: Consistencia en la convergencia. |
 | Almacenamiento atención | atributo `_attention_weights` | docs/5_experiments.md | **Interpretabilidad** [Lugo21, p. 648]: Analizar qué k es más informativo. |

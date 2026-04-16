@@ -128,22 +128,31 @@ uv run python main.py train-bigru --epochs 50 --batch-size 16 --lr 0.0005
 ---
 
 ## Hiperparámetros finales
-- **Embedding antibiótico:** 49 dimensiones.
-- **Hidden size RNN:** 128 (BiGRU).
-- **Dropout:** 0.3 (para ambos modelos).
-- **Learning rate:** 0.001 (Adam).
-- **Batch size:** 128 (optimizado para GPU).
-- **Gradient clipping:** 1.0 (solo BiGRU).
-- pos_weight scale: 2.5x (solo BiGRU, para priorizar Recall).
-- Early stopping: paciencia 10.
+
+| Hiperparámetro | MLP | BiGRU | MultiBiGRU | HierBiGRU | HierSet |
+|---|---|---|---|---|---|
+| Embedding antibiótico | 49 | 49 | 49 | 49 | 49 |
+| Hidden size RNN/proj | — | 128 | 64/stream | 128 | 128 |
+| Dropout | 0.3 | 0.3 | 0.3 | 0.3 | 0.3 |
+| Learning rate | 0.001 | 0.001 | 0.001 | 0.001 | 0.001 |
+| Optimizador | AdamW | AdamW | AdamW | AdamW | AdamW |
+| weight_decay | — | — | 1e-4 | — | 1e-3 |
+| Gradient clipping | — | 1.0 | — | 1.0 | — |
+| pos_weight_scale | 1.0 | 2.5 | 2.5 | 2.5 | 2.5 |
+| Early stopping patience | 10 | 10 | 15 | 15 | 15 |
+| **F1 (test)** | 0.8600 | 0.8566 | 0.8514 | 0.8307 | **0.8900** |
+| **AUC-ROC (test)** | 0.9035 | 0.8998 | 0.8944 | 0.8539 | **0.9368** |
+| **Recall (test)** | 0.9165 | 0.9032 | 0.8925 | 0.8788 | 0.9088 |
+
+**Modelo seleccionado: HierSet** — mejor F1 y AUC-ROC del proyecto.
 
 ---
 
-## Modelo C — Multi-Stream BiGRU (Arquitectura Experta)
+## Modelo C — Multi-Stream (Encoder Order-Independent)
 
 ### Arquitectura
 
-Esta arquitectura resuelve la **limitación estructural del padding** detectada en el Modelo B. En lugar de una matriz única, procesa cada resolución de k-mero con un flujo independiente.
+Cada histograma de k-meros (k=3,4,5) se procesa con un `KmerStream` independiente que no introduce dependencias secuenciales entre bins. La fusión aprende qué escala de k-meros es más diagnóstica para cada antibiótico.
 
 ```mermaid
 graph TD
@@ -152,42 +161,49 @@ K4["k=4 [batch, 256, 1]"]
 K5["k=5 [batch, 1024, 1]"]
 AB["Antibiotic Index"]
 
-G3["BiGRU(64)"]
-G4["BiGRU(64)"]
-G5["BiGRU(64)"]
+S3["KmerStream(64)<br/>LayerNorm → Linear(1→128) → bin_importance → attention"]
+S4["KmerStream(256)<br/>LayerNorm → Linear(1→128) → bin_importance → attention"]
+S5["KmerStream(1024)<br/>LayerNorm → Linear(1→128) → bin_importance → attention"]
 
-A3["Attention"]
-A4["Attention"]
-A5["Attention"]
-
-Cat["Concatenate [batch, 433]"]
+Gate["stream_gate: Linear(49→3)<br/>softmax → gates [batch, 3]"]
+Fused["Weighted sum [batch, 128]"]
+Cat["Concatenate [batch, 177]"]
 L1["Dense(128, ReLU) + Dropout(0.3)"]
 L2["Dense(1, Logit)"]
 
-K3 --> G3 --> A3 --> Cat
-K4 --> G4 --> A4 --> Cat
-K5 --> G5 --> A5 --> Cat
-AB --> Emb(49) --> Cat
+K3 --> S3
+K4 --> S4
+K5 --> S5
+AB --> Emb["Antibiotic Embedding(49)"]
+Emb --> Gate
+S3 --> Fused
+S4 --> Fused
+S5 --> Fused
+Gate --> Fused
+Fused --> Cat
+Emb --> Cat
 Cat --> L1 --> L2
 ```
 
 ### Justificación de la arquitectura
 
-1.  **Eliminación del Padding:** Al procesar k=3, k=4 y k=5 en secuencias separadas, el mecanismo de atención opera exclusivamente sobre información genómica real, evitando que el 86% de la energía se pierda en posiciones con ceros [Ngiam11].
-2.  **Streams Expertos:** Cada BiGRU aprende patrones específicos para su tamaño de k-mero. k=3 captura tripletes (codones), mientras que k=5 identifica motivos más largos asociados a determinantes de resistencia.
-3.  **Fusión Tardía (Late Fusion):** Siguiendo a [Ngiam11] y [Goodfellow16, Cap. 15], se extraen representaciones comprimidas (vectores de contexto) de cada modalidad antes de concatenarlas, permitiendo que el clasificador aprenda interacciones complejas entre las diferentes resoluciones.
-4.  **Eficiencia de Parámetros:** Se reduce el `hidden_size` a 64 por stream para que el conteo total (~233K) sea comparable a la BiGRU base, evitando un aumento excesivo de la complejidad.
+1.  **Encoder sin dependencias secuenciales:** La BiGRU original trataba los índices de bins como una secuencia, creando dependencias artificiales (bin_i influye sobre bin_{i+1} a través del estado oculto). El `KmerStream` proyecta cada bin de forma independiente — la representación de un k-mero no depende de qué otros k-meros lo precedieron en el tensor [Goodfellow16, Cap. 10].
+2.  **`bin_importance`:** Prior aprendido por identidad de bin. A diferencia del sesgo secuencial, asigna un escalar fijo a cada k-mero específico sin crear dependencias entre bins adyacentes. Biológicamente válido: el k-mero "ACGT" siempre mapea al mismo bin.
+3.  **Fusión condicionada por antibiótico con softmax [Ngiam11]:** Los gates de fusión usan `softmax` para que los tres streams compitan — garantiza que al menos un stream permanezca activo y el modelo no pueda ignorar el genoma apoyándose solo en el prior del antibiótico.
+4.  **Regularización con AdamW [Loshchilov19]:** `weight_decay=1e-4` aplicado con AdamW para regularización L2 desacoplada.
 
 #### Comandos CLI
 
 ```bash
-# Entrenar Multi-Stream BiGRU:
-uv run python main.py train-multi-bigru --batch-size 128
+# Entrenar Multi-Stream:
+uv run python main.py train-multi-bigru
 ```
 
 ---
 
-## Modelo D — Token BiGRU (Arquitectura Secuencial Real)
+## Modelo D — Token BiGRU *(descartado)*
+
+> **Estado:** descartado por diseño deficiente. F1=0.8121 (iter. 2), por debajo del umbral de éxito. El subsampling uniforme (1 token/~1,100 bp) diluye la señal de genes de resistencia (~800–2,000 bp). Ver análisis en `docs/PLAN_TOKEN_BIGRU.md`. No se recomienda usar `train-token-bigru`.
 
 ### Arquitectura
 
@@ -234,5 +250,80 @@ uv run python main.py prepare-tokens --n-jobs -1
 
 # Entrenar Token BiGRU:
 uv run python main.py train-token-bigru --batch-size 32
+```
+
+---
+
+## Modelo E — HierBiGRU (Cobertura total con histogramas segmentados)
+
+### Arquitectura
+
+Divide el genoma concatenado en HIER_N_SEGMENTS segmentos contiguos y calcula el histograma k=4 de cada segmento, garantizando 100% de cobertura. Una BiGRU profunda procesa la secuencia de histogramas y la atención de Bahdanau identifica los segmentos más diagnósticos.
+
+```mermaid
+graph TD
+    IN["[batch, HIER_N_SEGMENTS, 256]<br/>HIER_N_SEGMENTS segmentos × histograma k=4"]
+    GRU["BiGRU(hidden=128, layers=2, dropout=0.3)<br/>→ [batch, HIER_N_SEGMENTS, 256]"]
+    ATT["BahdanauAttention(dim=128)<br/>→ context [batch, 256]"]
+    EMB["Antibiotic Embedding(49)"]
+    CAT["Concatenate [batch, 305]"]
+    L1["Linear(305→128) + ReLU + Dropout(0.3)"]
+    L2["Linear(128→1)"]
+
+    IN --> GRU --> ATT --> CAT
+    EMB --> CAT --> L1 --> L2
+```
+
+**Limitación conocida:** la BiGRU asume que los segmentos adyacentes en el tensor son biológicamente relacionados. En ensamblajes draft el orden de contigs es arbitrario, por lo que algunas adyacencias entre segmentos son artefactos del ensamblador.
+
+**Resultados:** F1=0.8307, Recall=0.8788, AUC-ROC=0.8539. Early stopping época 43. No supera el criterio de éxito — la BiGRU introduce dependencias secuenciales artificiales entre segmentos que perjudican la señal cuando los genes de resistencia están distribuidos sin orden fijo.
+
+#### Comandos CLI
+
+```bash
+# Preparar histogramas segmentados (una sola vez, para HierBiGRU y HierSet):
+uv run python main.py prepare-hier --n-jobs -1
+
+# Entrenar HierBiGRU:
+uv run python main.py train-hier-bigru
+```
+
+---
+
+## Modelo F — HierSet (Encoder de conjunto sobre segmentos)
+
+### Arquitectura
+
+Mismos datos que HierBiGRU (`hier_bigru/*.npy`), pero trata los HIER_N_SEGMENTS segmentos como un conjunto: proyección independiente por segmento + cross-attention query-key condicionada en el antibiótico. Es permutation-invariant sobre los segmentos que recibe.
+
+```mermaid
+graph TD
+    IN["[batch, HIER_N_SEGMENTS, 256]<br/>HIER_N_SEGMENTS segmentos × histograma k=4"]
+    NORM["LayerNorm(256) por segmento"]
+    PROJ["Linear(256→128) + ReLU + Dropout(0.3)<br/>(independiente por segmento)"]
+    EMB["Antibiotic Embedding(49)"]
+    QUERY["Linear(49→128) → query [batch, 128]"]
+    ATT["Cross-attention: score(s,a) = h_s·q_a/√D<br/>softmax → weighted sum → [batch, 128]"]
+    CAT["Concatenate [batch, 177]"]
+    L1["Linear(177→128) + ReLU + Dropout(0.3)"]
+    L2["Linear(128→1)"]
+
+    IN --> NORM --> PROJ --> ATT
+    EMB --> QUERY --> ATT
+    ATT --> CAT
+    EMB --> CAT --> L1 --> L2
+```
+
+**Propiedad clave:** sin dependencias secuenciales entre segmentos — la representación del segmento i no depende del segmento j. La atención es condicionada por el antibiótico (cross-attention query-key), permitiendo que el modelo atienda distintas regiones del genoma según el antibiótico consultado.
+
+**Alcance:** permutation-invariant sobre los HIER_N_SEGMENTS inputs tal como los recibe del pipeline. `prepare-hier` construye esos segmentos concatenando contigs en orden FASTA — HierSet no añade sesgo secuencial adicional, pero no elimina el que ya codifican las features.
+
+**Resultados:** F1=**0.8900**, Recall=0.9088, AUC-ROC=**0.9368**. Early stopping época 65. **Mejor modelo del proyecto.**
+
+#### Comandos CLI
+
+```bash
+# (Reutiliza los mismos .npy de prepare-hier)
+uv run python main.py train-hier-set
 ```
 

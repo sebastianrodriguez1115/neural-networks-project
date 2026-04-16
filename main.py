@@ -10,17 +10,22 @@ Comandos:
     export-contradictions-cmd Exporta pares con etiquetas contradictorias a CSV
     prepare-data              Preprocesa datos: limpia, extrae k-meros, split, normaliza
     prepare-tokens            Extrae secuencias de tokens para el modelo Token BiGRU
+    prepare-hier              Extrae histogramas segmentados para el modelo Hierarchical BiGRU
     train-mlp                 Entrena el MLP sobre los datos preprocesados
     train-bigru               Entrena la BiGRU + Attention sobre los datos preprocesados
     train-token-bigru         Entrena la Token BiGRU (deep NN con tokens)
     train-multi-bigru         Entrena la Multi-Stream BiGRU (arquitectura experta por k)
+    train-hier-bigru          Entrena el Hierarchical BiGRU sobre histogramas segmentados
+    train-hier-set            Entrena el Hierarchical Set Encoder (sin dependencias secuenciales)
 
 Uso:
     uv run python main.py --help
     uv run python main.py download-amr
     uv run python main.py eda --labels data/processed/amr_labels.csv
     uv run python main.py prepare-tokens
+    uv run python main.py prepare-hier
     uv run python main.py train-token-bigru
+    uv run python main.py train-hier-bigru
     uv run python main.py train-mlp
 """
 
@@ -34,11 +39,13 @@ import typer
 from torch.utils.data import DataLoader
 
 from bvbrc import download_multiple_genomes_fasta, fetch_amr_labels
-from data_pipeline import run_pipeline, extract_and_save_tokens
+from data_pipeline import run_pipeline, extract_and_save_tokens, extract_and_save_hier
 from data_pipeline.constants import (
     RANDOM_SEED,
     TOKEN_KMER_K,
     TOKEN_MAX_LEN,
+    HIER_KMER_K,
+    HIER_N_SEGMENTS,
 )
 from models.mlp.dataset import MLPDataset
 from models.mlp.model import AMRMLP
@@ -48,6 +55,10 @@ from models.multi_bigru.dataset import MultiBiGRUDataset
 from models.multi_bigru.model import AMRMultiBiGRU
 from models.token_bigru.dataset import TokenBiGRUDataset
 from models.token_bigru.model import AMRTokenBiGRU
+from models.hier_bigru.dataset import HierBiGRUDataset
+from models.hier_bigru.model import AMRHierBiGRU
+from models.hier_set.dataset import HierSetDataset
+from models.hier_set.model import AMRHierSet
 from eda import export_contradictions, run_eda
 from train import detect_device, set_seed, train as run_training
 
@@ -293,6 +304,54 @@ def prepare_tokens(
     typer.echo(f"Tokens guardados en: {data_dir}/token_bigru/")
 
 
+@app.command(help="Extrae histogramas segmentados para el modelo Hierarchical BiGRU.")
+def prepare_hier(
+    data_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio con outputs del pipeline (splits.csv, etc.).",
+    ),
+    fasta_dir: Path = typer.Option(
+        Path("data/raw/fasta"),
+        help="Directorio con archivos .fna de genomas.",
+    ),
+    n_jobs: int = typer.Option(
+        1,
+        help="Número de procesos paralelos. Usa -1 para el 80% de los CPUs.",
+    ),
+):
+    """
+    Extrae histogramas segmentados (tiled histograms) para AMRHierBiGRU.
+
+    Divide cada genoma en HIER_N_SEGMENTS segmentos y calcula el histograma de k=4
+    para cada uno. Garantiza cobertura del 100% del genoma. Los resultados se guardan
+    en data/processed/hier_bigru/ como archivos .npy.
+
+    NOTA: si se cambia HIER_N_SEGMENTS en constants.py, este comando debe volver a
+    ejecutarse — los .npy existentes quedarán con shape incompatible y el dataset
+    fallará al cargarlos.
+    """
+    splits_path = data_dir / "splits.csv"
+    if not splits_path.exists():
+        typer.echo(f"Error: no se encontró splits.csv en {data_dir}. Ejecuta prepare-data primero.", err=True)
+        raise typer.Exit(code=1)
+
+    if not fasta_dir.is_dir():
+        typer.echo(f"Error: el directorio de FASTA no existe: {fasta_dir}", err=True)
+        raise typer.Exit(code=1)
+
+    splits = pandas.read_csv(splits_path, dtype={"genome_id": str})
+    genome_list = sorted(splits["genome_id"].unique())
+
+    typer.echo(f"Extrayendo histogramas segmentados para {len(genome_list)} genomas...")
+    extract_and_save_hier(
+        genome_ids=genome_list,
+        fasta_dir=fasta_dir,
+        output_dir=data_dir,
+        n_jobs=n_jobs,
+    )
+    typer.echo(f"Features guardadas en: {data_dir}/hier_bigru/")
+
+
 @app.command(help="Entrena el MLP (shallow NN) sobre los datos preprocesados y evalúa sobre test set.")
 def train_mlp(
     data_dir: Path = typer.Option(
@@ -307,6 +366,7 @@ def train_mlp(
     batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
     lr: float = typer.Option(0.001, help="Tasa de aprendizaje para Adam."),
     patience: int = typer.Option(10, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
 ):
     """
     Entrena el Perceptrón Multicapa (AMRMLP) para predicción de AMR.
@@ -356,6 +416,7 @@ def train_mlp(
         lr=lr,
         epochs=epochs,
         patience=patience,
+        lr_patience=lr_patience,
         output_dir=output_dir,
     )
 
@@ -381,6 +442,7 @@ def train_bigru(
     batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
     lr: float = typer.Option(0.001, help="Tasa de aprendizaje para Adam."),
     patience: int = typer.Option(10, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
     pos_weight_scale: float = typer.Option(
         2.5,
         "--pos-weight-scale",
@@ -440,6 +502,7 @@ def train_bigru(
         "batch_size": batch_size,
         "lr": lr,
         "patience": patience,
+        "lr_patience": lr_patience,
         "pos_weight_scale": pos_weight_scale,
         "max_grad_norm": 1.0,
         "device": str(device),
@@ -457,6 +520,7 @@ def train_bigru(
         lr=lr,
         epochs=epochs,
         patience=patience,
+        lr_patience=lr_patience,
         output_dir=output_dir,
         max_grad_norm=1.0,
     )
@@ -483,6 +547,7 @@ def train_token_bigru(
     batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
     lr: float = typer.Option(0.0005, help="Tasa de aprendizaje para Adam."),
     patience: int = typer.Option(10, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
     pos_weight_scale: float = typer.Option(
         1.5,
         "--pos-weight-scale",
@@ -539,6 +604,7 @@ def train_token_bigru(
         "batch_size": batch_size,
         "lr": lr,
         "patience": patience,
+        "lr_patience": lr_patience,
         "pos_weight_scale": pos_weight_scale,
         "weight_decay": weight_decay,
         "max_grad_norm": 1.0,
@@ -557,6 +623,7 @@ def train_token_bigru(
         lr=lr,
         epochs=epochs,
         patience=patience,
+        lr_patience=lr_patience,
         output_dir=output_dir,
         max_grad_norm=1.0,
         weight_decay=weight_decay,
@@ -584,18 +651,24 @@ def train_multi_bigru(
     batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
     lr: float = typer.Option(0.001, help="Tasa de aprendizaje para Adam."),
     patience: int = typer.Option(10, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
     pos_weight_scale: float = typer.Option(
         2.5,
         "--pos-weight-scale",
         help="Factor multiplicador del pos_weight base [King20].",
     ),
+    weight_decay: float = typer.Option(
+        1e-4,
+        "--weight-decay",
+        help="Regularización L2 con AdamW [Loshchilov19].",
+    ),
 ):
     """
-    Entrena la Multi-Stream BiGRU para predicción de AMR.
+    Entrena el modelo Multi-Stream para predicción de AMR.
 
-    Procesa cada k-mero (3, 4, 5) con una BiGRU independiente para eliminar
-    el ruido del padding [Ngiam11]. Reutiliza los vectores del MLP para
-    eficiencia de almacenamiento.
+    Procesa cada histograma de k-meros (k=3,4,5) con un encoder sin dependencias
+    secuenciales entre bins (proyección element-wise + attention pooling). La
+    fusión entre streams está condicionada por el antibiótico [Ngiam11].
     """
     set_seed(RANDOM_SEED)
     device = detect_device()
@@ -633,7 +706,9 @@ def train_multi_bigru(
         "batch_size": batch_size,
         "lr": lr,
         "patience": patience,
+        "lr_patience": lr_patience,
         "pos_weight_scale": pos_weight_scale,
+        "weight_decay": weight_decay,
         "max_grad_norm": 1.0,
         "device": str(device),
     }
@@ -650,8 +725,212 @@ def train_multi_bigru(
         lr=lr,
         epochs=epochs,
         patience=patience,
+        lr_patience=lr_patience,
         output_dir=output_dir,
         max_grad_norm=1.0,
+        weight_decay=weight_decay,
+    )
+
+    typer.echo(f"\nResultados en test set:")
+    typer.echo(f"  F1:      {test_metrics['f1']:.4f}")
+    typer.echo(f"  Recall:  {test_metrics['recall']:.4f}")
+    typer.echo(f"  AUC-ROC: {test_metrics['auc_roc']:.4f}")
+    typer.echo(f"  Umbral:  {test_metrics['threshold_used']:.4f}")
+    typer.echo(f"\nGuardado en: {output_dir}")
+
+
+@app.command(help="Entrena el modelo Hierarchical BiGRU sobre histogramas segmentados.")
+def train_hier_bigru(
+    data_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio con outputs del pipeline (splits.csv, hier_bigru/, etc.).",
+    ),
+    output_dir: Path = typer.Option(
+        Path("results/hier_bigru"),
+        help="Directorio donde guardar modelo, métricas y gráficas.",
+    ),
+    epochs: int = typer.Option(100, help="Número máximo de épocas."),
+    batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
+    lr: float = typer.Option(0.001, help="Tasa de aprendizaje para AdamW."),
+    patience: int = typer.Option(15, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
+    pos_weight_scale: float = typer.Option(
+        2.5,
+        "--pos-weight-scale",
+        help="Factor multiplicador del pos_weight base [King20].",
+    ),
+    weight_decay: float = typer.Option(
+        1e-4,
+        "--weight-decay",
+        help="Regularización L2 [Goodfellow16, Cap. 7].",
+    ),
+):
+    """
+    Entrena la arquitectura Hierarchical BiGRU + Atención.
+
+    Procesa el genoma como una secuencia de 64 histogramas locales, permitiendo
+    que el mecanismo de atención se enfoque en segmentos específicos (ej. genes
+    de resistencia) sin perder cobertura global.
+    """
+    set_seed(RANDOM_SEED)
+    device = detect_device()
+    typer.echo(f"Dispositivo: {device}")
+
+    # Cargar datasets
+    typer.echo("Cargando datos (Hierarchical BiGRU)...")
+    train_ds = HierBiGRUDataset(data_dir, split="train")
+    val_ds = HierBiGRUDataset(data_dir, split="val")
+    test_ds = HierBiGRUDataset(data_dir, split="test")
+    typer.echo(f"Muestras — train: {len(train_ds)}, val: {len(val_ds)}, test: {len(test_ds)}")
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size)
+    test_loader = DataLoader(test_ds, batch_size=batch_size)
+
+    # Modelo jerárquico
+    model = AMRHierBiGRU.from_antibiotic_index(str(data_dir / "antibiotic_index.csv"))
+    typer.echo(f"Modelo: {sum(p.numel() for p in model.parameters())} parámetros")
+
+    # Función de pérdida
+    base_pos_weight = HierBiGRUDataset.load_pos_weight(data_dir)
+    scaled_pos_weight = base_pos_weight * pos_weight_scale
+    criterion = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([scaled_pos_weight], device=device),
+    )
+    typer.echo(f"pos_weight base: {base_pos_weight:.4f} → escalado: {scaled_pos_weight:.4f}")
+
+    # Trazabilidad
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    params = {
+        "model_type": "hier_bigru",
+        "hier_n_segments": HIER_N_SEGMENTS,
+        "hier_kmer_k": HIER_KMER_K,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "lr": lr,
+        "patience": patience,
+        "lr_patience": lr_patience,
+        "pos_weight_scale": pos_weight_scale,
+        "weight_decay": weight_decay,
+        "max_grad_norm": 1.0,
+        "device": str(device),
+    }
+    (output_dir / "params.json").write_text(json.dumps(params, indent=2))
+
+    # Entrenar
+    test_metrics = run_training(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        device=device,
+        lr=lr,
+        epochs=epochs,
+        patience=patience,
+        lr_patience=lr_patience,
+        output_dir=output_dir,
+        max_grad_norm=1.0,
+        weight_decay=weight_decay,
+    )
+
+    typer.echo(f"\nResultados en test set:")
+    typer.echo(f"  F1:      {test_metrics['f1']:.4f}")
+    typer.echo(f"  Recall:  {test_metrics['recall']:.4f}")
+    typer.echo(f"  AUC-ROC: {test_metrics['auc_roc']:.4f}")
+    typer.echo(f"  Umbral:  {test_metrics['threshold_used']:.4f}")
+    typer.echo(f"\nGuardado en: {output_dir}")
+
+
+@app.command(help="Entrena el Hierarchical Set Encoder (sin dependencias secuenciales entre segmentos).")
+def train_hier_set(
+    data_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio con outputs del pipeline (splits.csv, hier_bigru/, etc.).",
+    ),
+    output_dir: Path = typer.Option(
+        Path("results/hier_set"),
+        help="Directorio donde guardar modelo, métricas y gráficas.",
+    ),
+    epochs: int = typer.Option(100, help="Número máximo de épocas."),
+    batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
+    lr: float = typer.Option(0.001, help="Tasa de aprendizaje para AdamW."),
+    patience: int = typer.Option(15, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
+    pos_weight_scale: float = typer.Option(
+        2.5,
+        "--pos-weight-scale",
+        help="Factor multiplicador del pos_weight base [King20].",
+    ),
+    weight_decay: float = typer.Option(
+        1e-3,
+        "--weight-decay",
+        help="Regularización L2 con AdamW [Loshchilov19].",
+    ),
+):
+    """
+    Entrena el Hierarchical Set Encoder para predicción de AMR.
+
+    Procesa los HIER_N_SEGMENTS segmentos de histogramas sin dependencias
+    secuenciales entre ellos: proyección independiente por segmento + attention
+    pooling condicionado en el antibiótico. A diferencia de HierBiGRU, no asume
+    que segmentos adyacentes en el tensor sean biológicamente relacionados.
+    """
+    set_seed(RANDOM_SEED)
+    device = detect_device()
+    typer.echo(f"Dispositivo: {device}")
+
+    typer.echo("Cargando datos (Hierarchical Set Encoder)...")
+    train_ds = HierSetDataset(data_dir, split="train")
+    val_ds = HierSetDataset(data_dir, split="val")
+    test_ds = HierSetDataset(data_dir, split="test")
+    typer.echo(f"Muestras — train: {len(train_ds)}, val: {len(val_ds)}, test: {len(test_ds)}")
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size)
+    test_loader = DataLoader(test_ds, batch_size=batch_size)
+
+    model = AMRHierSet.from_antibiotic_index(str(data_dir / "antibiotic_index.csv"))
+    typer.echo(f"Modelo: {sum(p.numel() for p in model.parameters())} parámetros")
+
+    base_pos_weight = HierSetDataset.load_pos_weight(data_dir)
+    scaled_pos_weight = base_pos_weight * pos_weight_scale
+    criterion = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([scaled_pos_weight], device=device),
+    )
+    typer.echo(f"pos_weight base: {base_pos_weight:.4f} → escalado: {scaled_pos_weight:.4f}")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    params = {
+        "model_type": "hier_set",
+        "hier_n_segments": HIER_N_SEGMENTS,
+        "hier_kmer_k": HIER_KMER_K,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "lr": lr,
+        "patience": patience,
+        "lr_patience": lr_patience,
+        "pos_weight_scale": pos_weight_scale,
+        "weight_decay": weight_decay,
+        "device": str(device),
+    }
+    (output_dir / "params.json").write_text(json.dumps(params, indent=2))
+
+    test_metrics = run_training(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        device=device,
+        lr=lr,
+        epochs=epochs,
+        patience=patience,
+        lr_patience=lr_patience,
+        output_dir=output_dir,
+        weight_decay=weight_decay,
     )
 
     typer.echo(f"\nResultados en test set:")

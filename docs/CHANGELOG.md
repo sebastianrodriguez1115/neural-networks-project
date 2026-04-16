@@ -1,5 +1,70 @@
 # CHANGELOG
 
+### 2026-04-16 (sesión 5)
+
+#### Ajuste de umbral de despliegue HierSet (θ=0.40)
+- Umbral de clasificación bajado de 0.4939 (óptimo en val F1) a **θ=0.40** en el modelo HierSet ya entrenado.
+- Motivación clínica: en AMR un falso negativo (resistente clasificado como susceptible) es más costoso que un falso positivo. Bajar el umbral prioriza recall sobre precision.
+- Resultado: Recall 0.9088 → **0.9289** (+0.020), F1 0.8900 → 0.8876 (−0.002), Precision 0.8743 → 0.8498. AUC sin cambio (0.9368).
+- Tabla de sensibilidad explorada: θ=0.50→Rec=0.9066, θ=0.45→0.9187, θ=0.40→0.9289, θ=0.35→0.9383, θ=0.30→0.9474.
+- Documentado en `docs/5_experiments.md`: experimento 6, tabla consolidada y conclusiones actualizadas.
+
+### 2026-04-15 (sesión 4)
+
+#### Entrenamiento HierBiGRU y HierSet con 256 segmentos (Fase 6.2 y 6.3)
+- Ejecutado `prepare-hier --n-jobs -1`: 9060 genomas procesados en ~574 s. Datos en `data/processed/hier_bigru/`.
+- **HierBiGRU** (256 segs): F1=0.8307, Recall=0.8788, AUC=0.8539. Early stopping época 43. No cumple criterio de éxito.
+  - Las dependencias secuenciales de la BiGRU entre segmentos adyacentes perjudican la señal cuando los genes de resistencia están distribuidos sin orden fijo.
+- **HierSet** (256 segs): F1=0.8900, Recall=0.9088, AUC=**0.9368**. Early stopping época 65. **Mejor AUC del proyecto.**
+  - El encoder permutation-invariant con cross-attention condicionada por antibiótico supera a todos los modelos anteriores en AUC-ROC.
+- Comparación final documentada en `docs/5_experiments.md`: HierSet lidera en F1 y AUC; MLP tiene mayor Recall (0.9165).
+- Docs actualizados: `docs/5_experiments.md`, `docs/PROGRESS.md`, `docs/CHANGELOG.md`.
+
+### 2026-04-15 (sesión 3)
+
+#### Optimización de HierSet + fixes de code review (Fase 6)
+- **HIER_N_SEGMENTS** aumentado de 64 a **256** (`src/data_pipeline/constants.py`): resolución ~17 kb/segmento, genes de resistencia representan ~5–12% del histograma del segmento (vs ~1–3% con 64 segs). Requiere re-ejecutar `prepare-hier`.
+- **HierSet v2** — tres cambios de arquitectura:
+  - Regularización: dropout después de `proj`, `weight_decay` default 1e-3 (antes 1e-4).
+  - Cross-attention query-key: `score(s,a) = h_s · q_a / √D` donde `q_a = attn_query(ab_emb)`. Reemplaza la concatenación simple (que era shift-invariant en softmax y no condicionaba la atención). Nuevo test: `test_attention_varies_by_antibiotic`.
+- **MultiBiGRU** — fix: `LayerNorm(elementwise_affine=False)` para que `bin_importance` sea el único prior por identidad de bin. Reentrenado: F1=0.8514, Recall=0.8925, AUC=0.8944.
+- **Fix de test**: `test_tiled_histogram_matrix_no_boundary_kmers` corregido para verificar AAAT (k-mer espurio real) en lugar de AATT.
+- **Docs actualizados**: `AGENTS.md`, `docs/1_environment.md`, `src/README.md`, `docs/PROGRESS.md` sincronizados con estado actual del código.
+- Resultados viejos (64 segmentos) de `results/hier_bigru/` y `results/hier_set/` eliminados por incompatibilidad de shape.
+- **Pendiente:** re-ejecutar `prepare-hier --n-jobs -1` con 256 segmentos, luego entrenar HierBiGRU y HierSet.
+
+### 2026-04-15 (sesión 2)
+
+#### Extracción de histogramas segmentados — `prepare-hier` completado
+- Ejecutado `prepare-hier` con `--n-jobs -1` (25 workers, 80% CPUs): 9060 genomas procesados correctamente.
+- Datos disponibles en `data/processed/hier_bigru/` — listos para `train-hier-bigru` y `train-hier-set`.
+- Log completo guardado en `results/hier_bigru/prepare_hier_output.txt` (directorio eliminado al cambiar a 256 segmentos en sesión 3; log histórico no disponible).
+
+### 2026-04-15
+
+#### Implementación de HierSet — Encoder de conjunto para histogramas segmentados (Fase 6)
+- Implementado modelo `AMRHierSet` en `src/models/hier_set/model.py`: trata los HIER_N_SEGMENTS segmentos como un conjunto. Pipeline inicial: LayerNorm(256) → Linear(256→128)+ReLU → attention pooling content-based → concat(ab_emb) → clasificador. (Arquitectura mejorada en sesión 3: cross-attention condicionada por antibiótico.)
+- Implementada `HierSetDataset` en `src/models/hier_set/dataset.py`: subclase delgada de `HierBiGRUDataset`, reutiliza los mismos `.npy` de `hier_bigru/`.
+- Añadido comando `train-hier-set` en `main.py`.
+- 10 tests unitarios en `tests/models/test_hier_set.py`, incluyendo `test_permutation_invariance` (propiedad central) y `test_no_sequential_modules`.
+- Añadido `test_hier_set_dataset` en `tests/models/test_datasets.py`.
+
+#### Refactorización completa de MultiBiGRU — Encoder order-independent (Fase 4 revisada)
+- Reemplazada la BiGRU por stream por un encoder sin dependencias secuenciales entre bins: `KmerStream` = LayerNorm(seq_len) + Linear(1→128,ReLU) + `bin_importance` (prior por identidad de bin) + attention pooling.
+- `bin_importance`: parámetro aprendido por bin que asigna importancia a cada k-mero específico, sin crear dependencias entre bins adyacentes (a diferencia de la BiGRU).
+- Fusión con `softmax` en lugar de `sigmoid` independiente: los tres streams compiten, garantizando que ninguno se apague completamente (evita el camino degenerado de ignorar el genoma).
+- Añadido `weight_decay` (AdamW) al comando `train-multi-bigru`.
+- Input del clasificador reducido de 433 a 177 dims (128 contexto + 49 embedding).
+- Tests actualizados: `test_gate_sum_to_one`, `test_gate_varies_by_antibiotic`, `test_no_sequential_modules`, `test_bin_importance_is_per_bin_prior`. 13 tests en `test_multi_bigru.py`.
+- Reentrenado en sesión 3 con nueva arquitectura: F1=0.8514, Recall=0.8925, AUC=0.8944.
+
+#### Implementación de HierBiGRU (Fase 6)
+- Implementado modelo `AMRHierBiGRU` en `src/models/hier_bigru/model.py`: BiGRU profunda (2 capas) + BahdanauAttention sobre HIER_N_SEGMENTS segmentos de histogramas (k=4, 256 dims).
+- Implementada `HierBiGRUDataset` con validación de shape `(HIER_N_SEGMENTS, HIER_KMER_DIM)`.
+- Añadidos comandos `prepare-hier` y `train-hier-bigru` en `main.py`.
+- 8 tests unitarios en `tests/models/test_hier_bigru.py`.
+- **Pendiente:** correr `prepare-hier` (genera `data/processed/hier_bigru/*.npy`, ~9060 genomas, proceso lento) y luego `train-hier-bigru`.
+
 ### 2026-04-10
 
 #### Análisis de resultados y cierre de Fase 5 — Token BiGRU
@@ -108,7 +173,7 @@
 - `detect_device()`: detección automática CUDA → MPS → CPU
 - `train_epoch()`: una pasada forward+backward por el train set, retorna loss promedio
 - `evaluate()`: métricas completas (loss, accuracy, precision, recall, F1, AUC-ROC) + búsqueda de umbral óptimo por máximo F1
-- `train()`: orquestador con Adam, early stopping sobre val loss (patience), checkpoint por mejor val F1, genera `best_model.pt`, `metrics.json`, `history.csv`, `history.png`
+- `train()`: orquestador con AdamW, early stopping y checkpoint sobre val_F1 (patience), ReduceLROnPlateau sobre val_F1, genera `best_model.pt`, `metrics.json`, `history.csv`, `history.png`
 - Comando `train-mlp` agregado en `main.py` con opciones: `--data-dir`, `--output-dir`, `--epochs`, `--batch-size`, `--lr`, `--patience`
 - 13 tests nuevos en `tests/test_train.py` (93 en total pasando)
 - Docstrings con referencias a Haykin (2009): retropropagación §4.4, mini-batches §4.3, early stopping §4.13, clasificador de Bayes §1.4

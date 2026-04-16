@@ -20,7 +20,7 @@ from data_pipeline.features import (
     normalize_features,
     split_genomes,
 )
-from data_pipeline.constants import BIGRU_PAD_DIM, KMER_DIMS, KMER_SIZES, TOTAL_KMER_DIM, TRAIN_RATIO
+from data_pipeline.constants import BIGRU_PAD_DIM, HIER_KMER_DIM, HIER_KMER_K, HIER_N_SEGMENTS, KMER_DIMS, KMER_SIZES, TOTAL_KMER_DIM, TRAIN_RATIO
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -170,6 +170,78 @@ def test_mlp_vector_to_bigru_matrix_padded_positions_are_zero():
     assert matrix[KMER_DIMS[1], 1] == pytest.approx(0.0)
     # histograma k=5: KMER_DIMS[2] dims exactas (== BIGRU_PAD_DIM) — sin relleno en col 2
     assert matrix[BIGRU_PAD_DIM - 1, 2] == pytest.approx(1.0)
+
+
+# ── to_tiled_histogram_matrix ─────────────────────────────────────────────────
+
+
+def _write_multi_contig_fasta(path, seq1="ACGT" * 50, seq2="TTGG" * 50):
+    path.write_text(f">contig1\n{seq1}\n>contig2\n{seq2}\n")
+
+
+def test_tiled_histogram_matrix_shape(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 1000)
+
+    extractor = KmerExtractor(fasta)
+    matrix = extractor.to_tiled_histogram_matrix()
+
+    assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
+    assert matrix.dtype == numpy.float32
+
+
+def test_tiled_histogram_matrix_rows_sum_to_one(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 1000)
+
+    extractor = KmerExtractor(fasta)
+    matrix = extractor.to_tiled_histogram_matrix()
+
+    row_sums = matrix.sum(axis=1)
+    numpy.testing.assert_allclose(row_sums, numpy.ones(HIER_N_SEGMENTS), atol=1e-5)
+
+
+def test_tiled_histogram_matrix_no_boundary_kmers(tmp_path):
+    """Contig boundary must not generate artificial k-mers.
+
+    Contig1 ends with 'AAAA', contig2 starts with 'TTTT'. If they were naively
+    joined without a separator the 4-mer 'AATT' (and others) would appear at the
+    boundary. With k-1 N separators the rolling hash resets and that k-mer must
+    not be present.
+    """
+    k = HIER_KMER_K  # 4
+    # Contig1: all A's so last k-1 bases are AAA
+    # Contig2: all T's so first base is T → without separator, AAAT would appear
+    # Build a k-mer index for the actual boundary k-mer AAAT
+    from data_pipeline.constants import BASE_TO_INDEX
+    boundary_seq = "AAAT"
+    boundary_idx = 0
+    for base in boundary_seq:
+        boundary_idx = (boundary_idx << 2) | BASE_TO_INDEX[base]
+
+    contig1 = "A" * 200
+    contig2 = "T" * 200
+    fasta = tmp_path / "genome.fna"
+    fasta.write_text(f">c1\n{contig1}\n>c2\n{contig2}\n")
+
+    matrix = KmerExtractor(fasta).to_tiled_histogram_matrix(k=k, n_segments=4)
+
+    # Reconstruct absolute counts from normalized rows to check presence
+    # (any non-zero count in boundary_idx would indicate the spurious k-mer)
+    assert matrix[:, boundary_idx].sum() == pytest.approx(0.0), (
+        "Boundary k-mer AAAT must not appear when contigs are N-separated"
+    )
+
+
+def test_tiled_histogram_matrix_empty_fasta_returns_zeros(tmp_path):
+    fasta = tmp_path / "empty.fna"
+    fasta.write_text(">c1\n\n")
+
+    extractor = KmerExtractor(fasta)
+    matrix = extractor.to_tiled_histogram_matrix()
+
+    assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
+    assert matrix.sum() == pytest.approx(0.0)
 
 
 # ── split_genomes ──────────────────────────────────────────────────────────────

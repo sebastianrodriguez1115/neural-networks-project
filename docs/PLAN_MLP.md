@@ -79,8 +79,8 @@ Calcula también el threshold óptimo (máximo F1) sobre el conjunto dado — ú
 ### `loop.py`: `train(model, train_loader, val_loader, ...)`
 - Adam, lr=0.001, max 100 epochs
 - `BCEWithLogitsLoss(pos_weight=...)` — el `pos_weight` se lee de `data/processed/train_stats.json` generado por el pipeline (no hardcodeado)
-- Early stopping: patience=10 sobre **val loss**
-- Checkpoint del mejor modelo: criterio **val F1**
+- Early stopping y checkpoint: ambos sobre **val_F1** (patience configurable)
+- ReduceLROnPlateau sobre **val_F1**
 - Log por epoch: loss train/val, accuracy, precision, recall, F1, AUC-ROC
 - Detección automática de device: CUDA → MPS → CPU
 
@@ -128,6 +128,6 @@ Comando `train-mlp`:
 | Optimizador | Adam lr=0.001 | docs/5_experiments.md | **Optimización (Cap. 4.16)**: Variante eficiente de la búsqueda en la superficie de error. |
 | Batch size | 32 | docs/5_experiments.md | **Aprendizaje por Lotes (Cap. 4.3)**: Balance entre estimación de gradiente y velocidad. |
 | Loss | `BCEWithLogitsLoss` + pos_weight dinámico | AGENTS.md | **Teoría de Bayes (Cap. 1.4)**: Minimización del riesgo promedio ante desbalance. |
-| Early stopping | patience=10, sobre val loss | AGENTS.md | **Generalización (Cap. 4.11)**: Evitar la fase de memorización del ruido. |
+| Early stopping | patience configurable, sobre val_F1 | AGENTS.md | **Generalización (Cap. 4.11)**: Evitar la fase de memorización del ruido. |
 | Mejor modelo | mayor val F1 | AGENTS.md | **Reconocimiento de Patrones (Cap. 9)**: Maximizar la utilidad estadística del clasificador. |
 | Semilla | 42 | AGENTS.md | **Trayectoria de Pesos (Cap. 4.4)**: Garantizar consistencia en la convergencia. |

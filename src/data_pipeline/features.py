@@ -9,6 +9,8 @@ from sklearn.model_selection import train_test_split
 from .constants import (
     BASE_TO_INDEX,
     BIGRU_PAD_DIM,
+    HIER_KMER_K,
+    HIER_N_SEGMENTS,
     KMER_DIMS,
     KMER_SIZES,
     RANDOM_SEED,
@@ -101,6 +103,58 @@ class KmerExtractor:
             tokens[:total] = all_tokens
 
         return tokens
+
+    def to_tiled_histogram_matrix(
+        self, k: int = HIER_KMER_K, n_segments: int = HIER_N_SEGMENTS
+    ) -> numpy.ndarray:
+        """Divide el genoma en n_segments y calcula el histograma de k-meros por segmento.
+
+        Garantiza cobertura del 100% del genoma sin el sesgo de subsampling
+        del modelo Token BiGRU. Cada segmento es una 'ventana' contigua de bases
+        que preserva la localidad geográfica de los genes de resistencia.
+
+        Parámetros:
+            k: tamaño del k-mero (default 4, dim=256)
+            n_segments: número de divisiones geográficas (default 64)
+
+        Retorna:
+            numpy.ndarray de shape (n_segments, 4^k) con dtype float32.
+            Cada fila es un histograma de frecuencias relativas (suma 1).
+        """
+        # 1. Concatenar todos los contigs separados por k-1 N's.
+        # Las N's reinician el rolling hash (_count_kmers ignora bases ambiguas),
+        # evitando k-meros artificiales en los límites entre contigs de ensamblajes draft.
+        separator = "N" * (k - 1)
+        full_seq = separator.join(self._read_sequences())
+        total_len = len(full_seq)
+
+        if total_len == 0:
+            return numpy.zeros((n_segments, 4**k), dtype=numpy.float32)
+
+        # 2. Calcular tamaño base del segmento
+        segment_size = total_len // n_segments
+        matrix = numpy.zeros((n_segments, 4**k), dtype=numpy.float32)
+
+        for i in range(n_segments):
+            start = i * segment_size
+            # El último segmento absorbe el remanente (si total_len % n_segments != 0)
+            end = (i + 1) * segment_size if i < n_segments - 1 else total_len
+
+            segment = full_seq[start:end]
+            if not segment:
+                continue
+
+            # 3. Calcular histograma para este segmento geográfico
+            hist = numpy.zeros(4**k, dtype=numpy.float64)
+            self._count_kmers(segment, k, hist)
+
+            # 4. Normalizar a frecuencia relativa (Haykin, Cap. 1.2)
+            # Esto hace que la representación sea independiente de la longitud del segmento.
+            s = hist.sum()
+            if s > 0:
+                matrix[i] = (hist / s).astype(numpy.float32)
+
+        return matrix
 
     def _read_sequences(self) -> list[str]:
         return [

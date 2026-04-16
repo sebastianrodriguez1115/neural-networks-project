@@ -1,11 +1,14 @@
 # AGENTS.md — Instrucciones para agentes IA
 
 ## Qué es este proyecto
-Proyecto académico: predecir resistencia antimicrobiana (AMR) en bacterias a partir de secuencias genómicas completas (WGS) usando dos redes neuronales:
-- **MLP (baseline):** vector de frecuencias k-meros concatenados (k=3,4,5), 1344 dims
-- **BiGRU + Attention:** mismos histogramas paddeados a 1024 y apilados → matriz `[batch, 1024, 3]`
+Proyecto académico: predecir resistencia antimicrobiana (AMR) en bacterias a partir de secuencias genómicas completas (WGS) usando redes neuronales. Clasificación binaria (Resistant / Susceptible) sobre organismos ESKAPE. El antibiótico entra como feature al modelo (embedding aprendido).
 
-Clasificación binaria (Resistant / Susceptible) sobre organismos ESKAPE. El antibiótico entra como feature al modelo (embedding aprendido).
+**Modelos implementados (en orden de rendimiento):**
+- **HierSet** ← mejor modelo: encoder de conjunto sobre 256 segmentos de histograma k=4 con cross-attention condicionada por antibiótico. F1=0.8900, AUC=0.9368, Recall=0.9088.
+- **MLP (baseline):** vector de frecuencias k-meros concatenados (k=3,4,5), 1344 dims. F1=0.8600, AUC=0.9035.
+- **BiGRU + Attention:** histogramas paddeados → matriz `[batch, 1024, 3]`. F1=0.8566, AUC=0.8998.
+- **MultiBiGRU:** 3 streams order-independent (k=3,4,5) con `bin_importance`. F1=0.8514, AUC=0.8944.
+- **HierBiGRU:** mismos 256 segmentos que HierSet pero con BiGRU (sesgo secuencial). F1=0.8307, AUC=0.8539. No competitivo.
 
 ## Stack
 - **Python 3.10+**, **PyTorch**, **uv** (gestor de paquetes — usar `uv run` y `uv add`)
@@ -16,8 +19,9 @@ Clasificación binaria (Resistant / Susceptible) sobre organismos ESKAPE. El ant
 |---|---|
 | `src/bvbrc/` | Paquete de descarga de datos desde BV-BRC (genomas FASTA + etiquetas AMR) |
 | `src/data_pipeline/` | Paquete de preprocesamiento: etiquetas, k-meros, splits |
-| `src/dataset.py` | `AMRDataset` — Dataset de PyTorch para entrenamiento |
-| `src/mlp_model.py` | `AMRMLP` — Perceptrón multicapa para predicción de AMR |
+| `src/models/base_dataset.py` | `BaseAMRDataset` — Dataset base de PyTorch para todos los modelos |
+| `src/models/hier_set/` | `AMRHierSet` — **mejor modelo** (F1=0.89, AUC=0.94) |
+| `src/models/mlp/` | `AMRMLP` — MLP baseline |
 | `src/train/` | Paquete de entrenamiento: evaluación, loop, early stopping |
 | `main.py` | Punto de entrada CLI (Typer) |
 
@@ -51,7 +55,7 @@ Estos documentos pueden quedar desactualizados cuando se modifica código o se c
 - Semilla aleatoria fija: `random_seed = 42`
 - Split: 70/15/15 estratificado por `genome_id` (no por registro)
 - Pérdida: `BCEWithLogitsLoss` con `pos_weight` para manejar desbalance
-- Early stopping: patience=10 sobre pérdida de validación; F1 solo para selección final
+- Early stopping: patience sobre val_F1 (tanto checkpoint como early stopping monitorizan val_F1); ReduceLROnPlateau también sobre val_F1
 
 ## Al terminar una tarea
 1. Marcar como completada en `docs/PROGRESS.md`

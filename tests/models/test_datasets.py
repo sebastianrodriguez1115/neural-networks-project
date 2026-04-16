@@ -12,11 +12,13 @@ import pandas
 import pytest
 import torch
 
-from data_pipeline.constants import TOTAL_KMER_DIM, TOKEN_PAD_ID
+from data_pipeline.constants import HIER_KMER_DIM, HIER_N_SEGMENTS, TOTAL_KMER_DIM, TOKEN_PAD_ID
 from models.mlp.dataset import MLPDataset
 from models.bigru.dataset import BiGRUDataset
 from models.multi_bigru.dataset import MultiBiGRUDataset
 from models.token_bigru.dataset import TokenBiGRUDataset
+from models.hier_bigru.dataset import HierBiGRUDataset
+from models.hier_set.dataset import HierSetDataset
 
 _N_TRAIN_GENOMES = 6
 _N_VAL_GENOMES = 2
@@ -75,6 +77,13 @@ def data_dir(tmp_path):
         tokens = rng.integers(0, 257, 4096).astype(numpy.int64)
         numpy.save(token_dir / f"{row['genome_id']}.npy", tokens)
 
+    # hier_bigru/*.npy — matrices (64, 256) de frecuencias relativas sintéticas
+    hier_dir = tmp_path / "hier_bigru"
+    hier_dir.mkdir()
+    for row in splits_rows:
+        mat = rng.dirichlet(numpy.ones(HIER_KMER_DIM), size=HIER_N_SEGMENTS).astype(numpy.float32)
+        numpy.save(hier_dir / f"{row['genome_id']}.npy", mat)
+
     # train_stats.json
     n_res = sum(1 for r in label_rows if r["resistant_phenotype"] == "Resistant" and r["genome_id"] in {str(i) for i in range(_N_TRAIN_GENOMES)})
     n_sus = sum(1 for r in label_rows if r["resistant_phenotype"] == "Susceptible" and r["genome_id"] in {str(i) for i in range(_N_TRAIN_GENOMES)})
@@ -125,6 +134,34 @@ class TestDatasets:
         assert tokens.dtype == torch.long
         assert tokens.min().item() >= 0
         assert tokens.max().item() <= TOKEN_PAD_ID  # 256 (incluye padding)
+
+    def test_hier_bigru_dataset(self, data_dir):
+        """Verifica que HierBiGRUDataset carga matrices [64, 256] float32."""
+        ds = HierBiGRUDataset(data_dir, "train")
+        assert len(ds) == _N_TRAIN_GENOMES * len(_ANTIBIOTICS)
+        genome, ab_idx, label = ds[0]
+        assert genome.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
+        assert genome.dtype == torch.float32
+        assert ab_idx.dtype == torch.long
+        assert label.dtype == torch.float32
+
+    def test_hier_set_dataset(self, data_dir):
+        """Verifica que HierSetDataset carga los mismos datos que HierBiGRUDataset."""
+        ds = HierSetDataset(data_dir, "train")
+        assert len(ds) == _N_TRAIN_GENOMES * len(_ANTIBIOTICS)
+        genome, ab_idx, label = ds[0]
+        assert genome.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
+        assert genome.dtype == torch.float32
+        assert ab_idx.dtype == torch.long
+        assert label.dtype == torch.float32
+
+    def test_hier_bigru_dataset_rejects_wrong_shape(self, data_dir):
+        """Verifica que se lanza ValueError con shape incorrecto."""
+        import numpy as np
+        bad_npy = data_dir / "hier_bigru" / "0.npy"
+        np.save(bad_npy, np.zeros((32, 256), dtype=numpy.float32))
+        with pytest.raises(ValueError, match="Shape inesperado"):
+            HierBiGRUDataset(data_dir, "train")
 
     def test_common_metadata(self, data_dir):
         """Verifica que la lógica común de BaseAMRDataset funciona en las subclases."""

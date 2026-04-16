@@ -7,6 +7,7 @@ Tests unitarios para el modelo AMRMultiBiGRU (arquitectura multi-stream).
 import pandas
 import pytest
 import torch
+import torch.nn as nn
 
 from models.multi_bigru.model import AMRMultiBiGRU
 from data_pipeline.constants import ANTIBIOTIC_EMBEDDING_DIM
@@ -127,7 +128,75 @@ class TestAMRMultiBiGRU:
             "antibiotic": ["ab1", "ab2"],
             "index": [0, 1]
         }).to_csv(csv_path, index=False)
-        
+
         model = AMRMultiBiGRU.from_antibiotic_index(str(csv_path))
         assert isinstance(model, AMRMultiBiGRU)
         assert model.antibiotic_embedding.num_embeddings == 2
+
+    def test_gate_sum_to_one(self, model, sample_input):
+        """Los gates de fusión deben sumar 1 (softmax) — ningún stream puede apagarse."""
+        genome, ab_idx = sample_input
+        model.eval()
+        with torch.no_grad():
+            ab_emb = model.antibiotic_embedding(ab_idx)
+            gates = torch.softmax(model.stream_gate(ab_emb), dim=-1)  # [batch, 3]
+        assert gates.shape == (ab_idx.shape[0], 3)
+        sums = gates.sum(dim=-1)
+        assert torch.allclose(sums, torch.ones_like(sums), atol=1e-5)
+
+    def test_gate_varies_by_antibiotic(self, model):
+        """Antibióticos distintos deben producir gates distintos (fusión condicionada)."""
+        model_3 = AMRMultiBiGRU(n_antibiotics=3)
+        model_3.eval()
+        ab0 = torch.tensor([0])
+        ab1 = torch.tensor([1])
+        with torch.no_grad():
+            emb0 = model_3.antibiotic_embedding(ab0)
+            emb1 = model_3.antibiotic_embedding(ab1)
+            gates0 = torch.softmax(model_3.stream_gate(emb0), dim=-1)
+            gates1 = torch.softmax(model_3.stream_gate(emb1), dim=-1)
+        assert not torch.allclose(gates0, gates1)
+
+    def test_no_sequential_modules(self, model):
+        """El encoder no debe contener módulos RNN — sin dependencias secuenciales entre bins."""
+        sequential_types = (nn.GRU, nn.LSTM, nn.RNN)
+        for name, module in model.named_modules():
+            assert not isinstance(module, sequential_types), (
+                f"Módulo secuencial inesperado: {name} ({type(module).__name__})"
+            )
+
+    def test_bin_importance_is_per_bin_prior(self, model):
+        """
+        bin_importance añade un prior por identidad de bin, no sesgo secuencial.
+
+        Con bin_importance uniforme (todos iguales), la atención depende solo
+        del contenido del bin (frecuencia), no de su posición en el tensor.
+        Esto confirma que no hay dependencia entre bins adyacentes.
+        """
+        model.eval()
+        # Forzar bin_importance uniforme en los tres streams.
+        # norm usa elementwise_affine=False → no tiene weight/bias por bin,
+        # así que zeroing bin_importance es suficiente para garantizar que
+        # la atención no dependa de la identidad del bin.
+        with torch.no_grad():
+            for stream in [model.stream_k3, model.stream_k4, model.stream_k5]:
+                stream.bin_importance.fill_(0.0)
+
+        batch_size = 2
+        k3 = torch.randn(batch_size, 64, 1)
+        k4 = torch.randn(batch_size, 256, 1)
+        k5 = torch.randn(batch_size, 1024, 1)
+        ab_idx = torch.zeros(batch_size, dtype=torch.long)
+
+        # Permutar bins en k3 — con bin_importance uniforme, la atención
+        # depende solo del contenido: el contexto ponderado debe ser idéntico
+        perm = torch.randperm(64)
+        k3_perm = k3[:, perm, :]
+
+        with torch.no_grad():
+            ctx_orig, _ = model.stream_k3(k3)
+            ctx_perm, _ = model.stream_k3(k3_perm)
+
+        assert torch.allclose(ctx_orig, ctx_perm, atol=1e-5), (
+            "Con bin_importance=0, el contexto debe ser invariante a permutaciones de bins"
+        )
