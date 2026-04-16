@@ -27,7 +27,8 @@ src/
 │   ├── mlp/
 │   ├── bigru/
 │   ├── multi_bigru/
-│   └── token_bigru/
+│   ├── hier_bigru/
+│   └── hier_set/
 │
 ├── eda.py
 └── README.md
@@ -56,20 +57,23 @@ Transforma el CSV crudo de etiquetas + archivos FASTA en features `.npy` listos 
 
 `run_eda()` imprime un reporte completo en consola: resumen general, distribución por especie, balance de clases, ranking de antibióticos, calidad de datos, outliers, baseline benchmark (majority class F1=0.7366) y análisis genómico opcional. `export_contradictions()` exporta pares con etiquetas contradictorias a CSV.
 
-### `dataset.py` — Dataset de PyTorch
+### `models/` — Modelos y datasets de PyTorch
 
-`AMRDataset(Dataset)`: pre-carga vectores genómicos `.npy` en RAM durante `__init__`. Cada muestra devuelve `(genome_vector, antibiotic_idx, label)`. Expone `load_pos_weight()` para leer `pos_weight` desde `train_stats.json`.
+Cada subdirectorio contiene `model.py` (arquitectura) y `dataset.py` (subclase de `BaseAMRDataset`):
 
-### `mlp_model.py` — Perceptrón Multicapa
-
-`AMRMLP(nn.Module)`: Concat(genome[1344], antibiotic_emb[49]) → Linear(1393, 512) + ReLU + Dropout(0.3) → Linear(512, 128) + ReLU + Dropout(0.3) → Linear(128, 1). Salida: logit sin sigmoid. Factory method `from_antibiotic_index()` para instanciar desde el CSV del pipeline.
+- **`base_dataset.py`** — `BaseAMRDataset`: carga `splits.csv`, `antibiotic_index.csv` y `train_stats.json`; expone `load_pos_weight()`. Base para todos los datasets específicos de modelo.
+- **`mlp/`** — `AMRMLP`: vector 1344-dim → Dense(512)+Dropout → Dense(128)+Dropout → logit.
+- **`bigru/`** — `AMRBiGRU`: matriz [1024,3] → BiGRU(128) → BahdanauAttention → logit.
+- **`multi_bigru/`** — `AMRMultiBiGRU`: tres streams k=3,4,5 con `KmerStream` (LayerNorm sin affine + `bin_importance` + attention pooling) → fusión softmax condicionada por antibiótico → logit.
+- **`hier_bigru/`** — `AMRHierBiGRU`: matriz [HIER_N_SEGMENTS, 256] → BiGRU(2 capas) → BahdanauAttention → logit. (No competitivo frente a HierSet.)
+- **`hier_set/`** — `AMRHierSet`: mismo input → proyección por segmento + dropout → cross-attention query-key condicionada en antibiótico → logit. Permutation-invariant. **Mejor modelo del proyecto** (F1=0.8900, AUC=0.9368).
 
 ### `train/` — Entrenamiento y evaluación
 
 Paquete con dos módulos:
 
 - **`evaluate.py`** — `collect_predictions()` (inferencia sin gradientes), `compute_metrics()` (accuracy, precision, recall, F1, AUC-ROC desde arrays numpy), `find_optimal_threshold()` (umbral que maximiza F1), y `evaluate()` que compone las tres anteriores.
-- **`loop.py`** — `set_seed()` (reproducibilidad), `detect_device()` (CUDA → MPS → CPU), `train_epoch()` (una pasada forward+backward), y `train()` como orquestador con Adam, early stopping sobre val loss, checkpoint por mejor val F1. Genera: `best_model.pt`, `metrics.json`, `history.csv`, `history.png`.
+- **`loop.py`** — `set_seed()` (reproducibilidad), `detect_device()` (CUDA → MPS → CPU), `train_epoch()` (una pasada forward+backward), y `train()` como orquestador con AdamW, early stopping y checkpoint sobre val_F1, ReduceLROnPlateau sobre val_F1. Genera: `best_model.pt`, `metrics.json`, `history.csv`, `history.png`.
 
 ## Punto de entrada
 
@@ -82,7 +86,12 @@ El CLI está en `main.py` (raíz del proyecto), no en `src/`. Usa Typer y expone
 | `eda` | `eda` | Análisis exploratorio completo con reporte en consola |
 | `export-contradictions-cmd` | `eda` | Exporta pares con etiquetas contradictorias a CSV |
 | `prepare-data` | `data_pipeline.pipeline` | Pipeline completo: limpieza → filtro → split → k-meros → normalización |
-| `train-mlp` | `train` + `dataset` + `mlp_model` | Entrena el MLP y evalúa sobre test set |
+| `prepare-hier` | `data_pipeline.pipeline` | Extrae histogramas segmentados (HIER_N_SEGMENTS×256) para HierBiGRU y HierSet |
+| `train-mlp` | `models.mlp` | Entrena el MLP y evalúa sobre test set |
+| `train-bigru` | `models.bigru` | Entrena la BiGRU + Attention |
+| `train-multi-bigru` | `models.multi_bigru` | Entrena el encoder multi-stream order-independent |
+| `train-hier-bigru` | `models.hier_bigru` | Entrena la HierBiGRU sobre histogramas segmentados |
+| `train-hier-set` | `models.hier_set` | Entrena el HierSet (encoder de conjunto) — mejor modelo |
 
 ## Flujo de datos
 

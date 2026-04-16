@@ -57,7 +57,7 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] `set_seed(42)` para reproducibilidad
 - [x] `train_epoch` (o similar) → loss promedio
 - [x] `evaluate(model, loader, criterion, device)` → loss, accuracy, precision, recall, F1, AUC-ROC + threshold óptimo
-- [x] `train(...)`: Adam lr=0.001, batch size=32, max 100 epochs, `BCEWithLogitsLoss` con `pos_weight` dinámico desde `train_stats.json`, early stopping patience=10 sobre val loss, checkpoint por mejor val F1
+- [x] `train(...)`: AdamW lr=0.001, batch size=32, max 100 epochs, `BCEWithLogitsLoss` con `pos_weight` dinámico desde `train_stats.json`, early stopping y checkpoint sobre val_F1 (patience configurable), ReduceLROnPlateau sobre val_F1
 - [x] Outputs en `results/mlp/`: `best_model.pt`, `metrics.json`, `history.csv`, `history.png`
 - [x] Comando `train-mlp` en `main.py`
 - [x] Tests unitarios (`tests/test_train.py` y `tests/test_mlp.py`)
@@ -133,6 +133,41 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] Re-entrenamiento y evaluación: F1=0.8121, **Recall=0.9567**, AUC=0.8190.
 - [x] Análisis de limitaciones: el subsampling uniforme (1 token/~1,100 bp) diluye la señal posicional de genes de resistencia (~800-2,000 bp), explicando por qué los histogramas (censo completo) superan a los tokens (muestra dispersa) en F1. Documentado en `PLAN_TOKEN_BIGRU.md`.
 - [x] Análisis de trabajo futuro: evaluación de Transformers sparse y modelos genómicos pre-entrenados (DNABERT-2, HyenaDNA, Nucleotide Transformer). Documentado en `PLAN_TOKEN_BIGRU.md` y `5_experiments.md`.
+
+---
+
+---
+
+## Fase 6 — Arquitecturas Jerárquicas y Revisión de MultiBiGRU
+
+### 6.1 Refactorización MultiBiGRU (encoder order-independent)
+- [x] Reemplazar BiGRU por stream por encoder sin dependencias secuenciales: `KmerStream` = LayerNorm(elementwise_affine=False) + proyección element-wise + `bin_importance` + attention pooling
+- [x] Fusión entre streams con `softmax` (en lugar de `sigmoid` independiente) para garantizar competencia entre streams
+- [x] Añadir `weight_decay` (AdamW) al comando `train-multi-bigru`
+- [x] Actualizar tests: `test_gate_sum_to_one`, `test_no_sequential_modules`, `test_bin_importance_is_per_bin_prior`
+- [x] Reentrenar MultiBiGRU con nueva arquitectura — F1=0.8514, Recall=0.8925, AUC=0.8944 (2026-04-15)
+
+### 6.2 HierBiGRU — Cobertura total del genoma con histogramas segmentados
+- [x] `KmerExtractor.to_tiled_histogram_matrix()`: divide el genoma en HIER_N_SEGMENTS segmentos, histograma k=4 (256 dims) por segmento
+- [x] `extract_and_save_hier()`: extracción paralela con `n_jobs`, guarda `.npy` en `hier_bigru/`
+- [x] Comando `prepare-hier` en `main.py`
+- [x] `AMRHierBiGRU`: BiGRU profunda (2 capas) + BahdanauAttention sobre HIER_N_SEGMENTS segmentos
+- [x] `HierBiGRUDataset`: carga matrices `[HIER_N_SEGMENTS, 256]` con validación de shape
+- [x] Comando `train-hier-bigru` en `main.py`
+- [x] 8 tests unitarios en `tests/models/test_hier_bigru.py`
+- [x] Correr `prepare-hier` con HIER_N_SEGMENTS=256 — 9060 genomas en ~574 s, datos en `data/processed/hier_bigru/`
+- [x] Entrenar HierBiGRU — F1=0.8307, Recall=0.8788, AUC=0.8539. Early stopping época 43. No cumple criterio.
+
+### 6.3 HierSet — Encoder de conjunto para histogramas segmentados
+- [x] `AMRHierSet`: cross-attention query-key condicionada en el antibiótico (score(s,a) = h_s·q_a/√D) + proyección con dropout (sin dependencias secuenciales entre segmentos). Permutation-invariant.
+- [x] `HierSetDataset`: subclase de `HierBiGRUDataset`, reutiliza mismos `.npy`
+- [x] Comando `train-hier-set` en `main.py`
+- [x] 11 tests unitarios en `tests/models/test_hier_set.py` (incluye `test_permutation_invariance` y `test_attention_varies_by_antibiotic`)
+- [x] Entrenar HierSet — F1=0.8900, Recall=0.9088, AUC=0.9368. Early stopping época 65. **Mejor AUC del proyecto.**
+
+### 6.4 Comparación final
+- [x] Comparar: MLP vs BiGRU vs MultiBiGRU vs HierBiGRU vs HierSet — ver `docs/5_experiments.md`
+- [x] Criterio de éxito: AUC-ROC ≥ 0.900 en algún modelo jerárquico — **cumplido por HierSet (AUC=0.9368)**
 
 ---
 

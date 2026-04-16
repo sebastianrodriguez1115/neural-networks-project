@@ -23,8 +23,9 @@ proyecto_redes_neuronales/
 │   │   ├── base_dataset.py # Clase base abstracta para datasets
 │   │   ├── mlp/          # Modelo MLP baseline
 │   │   ├── bigru/        # Modelo BiGRU + Attention
-│   │   ├── multi_bigru/  # Arquitectura Multi-Stream
-│   │   └── token_bigru/  # BiGRU sobre secuencia de tokens
+│   │   ├── multi_bigru/  # Encoder multi-stream order-independent
+│   │   ├── hier_bigru/   # HierBiGRU sobre histogramas segmentados
+│   │   └── hier_set/     # HierSet — encoder de conjunto (mejor modelo)
 │   ├── eda.py            # Análisis exploratorio (EDA)
 │   └── main.py           # CLI (Typer) — punto de entrada
 ├── tests/
@@ -34,7 +35,7 @@ proyecto_redes_neuronales/
 │   └── test_train.py     # Unit tests del loop de entrenamiento y métricas
 ├── data/
 │   ├── raw/              # Genomas FASTA descargados
-│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy) en subcarpetas mlp/, bigru/ y token_bigru/
+│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy) en subcarpetas mlp/, bigru/, hier_bigru/
 ├── results/              # Métricas, gráficas, checkpoints
 ├── notebooks/            # Exploración y visualización
 ├── docs/
@@ -91,11 +92,12 @@ uv run python main.py --help
 | `eda` | Análisis exploratorio: distribución, balance, outliers, baseline benchmark | `docs/2_eda.md` |
 | `export-contradictions-cmd` | Exporta pares (genome_id, antibiotic) con etiquetas contradictorias a CSV | `docs/2_eda.md` |
 | `prepare-data` | Preprocesamiento completo: limpieza, k-meros, split, normalización | `docs/3_data_pipeline.md` |
-| `prepare-tokens` | Extrae secuencias de tokens para el modelo Token BiGRU | `docs/PLAN_TOKEN_BIGRU.md` |
+| `prepare-hier` | Extrae histogramas segmentados (HIER_N_SEGMENTS×256) para HierBiGRU y HierSet | `docs/4_models.md` |
 | `train-mlp` | Entrena y evalúa el Perceptrón Multicapa (MLP) | `docs/PLAN_MLP.md` |
 | `train-bigru` | Entrena y evalúa la BiGRU + Attention | `docs/PLAN_BIGRU.md` |
-| `train-token-bigru` | Entrena y evalúa la Token BiGRU | `docs/PLAN_TOKEN_BIGRU.md` |
-| `train-multi-bigru` | Entrena y evalúa la Multi-Stream BiGRU | `docs/PLAN_MULTI_BIGRU.md` |
+| `train-multi-bigru` | Entrena y evalúa el encoder multi-stream order-independent | `docs/4_models.md` |
+| `train-hier-bigru` | Entrena y evalúa la HierBiGRU sobre histogramas segmentados | `docs/4_models.md` |
+| `train-hier-set` | Entrena y evalúa el HierSet — **mejor modelo** (F1=0.89, AUC=0.94) | `docs/4_models.md` |
 
 ## Tests
 

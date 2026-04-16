@@ -17,7 +17,7 @@ from .features import (
     normalize_features,
     split_genomes,
 )
-from .pipeline import run_pipeline, _extract_and_save_tokens as extract_and_save_tokens
+from .pipeline import run_pipeline, _extract_and_save_tokens as extract_and_save_tokens, extract_and_save_hier
 
 __all__ = [
     "LabelCleaner",
@@ -29,6 +29,7 @@ __all__ = [
     "split_genomes",
     "run_pipeline",
     "extract_and_save_tokens",
+    "extract_and_save_hier",
     "KMER_SIZES",
     "KMER_DIMS",
     "TOTAL_KMER_DIM",

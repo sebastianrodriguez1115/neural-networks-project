@@ -1,5 +1,7 @@
 # Plan de Implementación — Multi-Stream BiGRU (AMRMultiBiGRU)
 
+> **Nota histórica:** Este plan describe el diseño original (BiGRU separada por stream). La implementación final fue refactorizada a un encoder **order-independent** (`KmerStream` = LayerNorm sin affine + proyección element-wise + `bin_importance` + attention pooling), sin dependencias secuenciales entre bins. Los archivos de código mencionados en este plan (`src/multi_bigru_model.py`, `src/dataset.py`) no existen; la implementación actual está en `src/models/multi_bigru/`. Resultados finales: F1=0.8514, Recall=0.8925, AUC=0.8944.
+
 ## Contexto y Motivación
 
 Los modelos anteriores (BiGRU v1 y v2) procesan la entrada genómica como una matriz `[1024, 3]` donde cada columna es un histograma de k-meros paddeado con ceros hasta 1024 posiciones. Este padding introduce un problema estructural confirmado por el análisis de atención:

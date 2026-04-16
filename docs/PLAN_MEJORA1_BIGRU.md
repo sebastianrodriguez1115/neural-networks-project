@@ -310,7 +310,7 @@ graph LR
 - Atención Bahdanau (ATTENTION_DIM=128)
 - Optimizador: Adam lr=0.001 [Kingma15]
 - Gradient clipping: max_grad_norm=1.0 [Pascanu13]
-- Early stopping: patience=10 sobre val_loss
+- Early stopping: patience=10 sobre val_F1
 - Batch size: 32
 - Semilla: 42
 

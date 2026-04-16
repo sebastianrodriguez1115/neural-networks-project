@@ -10,8 +10,8 @@ import numpy
 import pandas
 import pytest
 
-from data_pipeline.constants import BIGRU_PAD_DIM, KMER_SIZES, MIN_GENOME_LENGTH, TOTAL_KMER_DIM
-from data_pipeline.pipeline import _extract_single_genome, run_pipeline
+from data_pipeline.constants import BIGRU_PAD_DIM, HIER_KMER_DIM, HIER_N_SEGMENTS, KMER_SIZES, MIN_GENOME_LENGTH, TOTAL_KMER_DIM
+from data_pipeline.pipeline import _extract_single_genome, _extract_single_genome_hier, extract_and_save_hier, run_pipeline
 
 # Mínimo de genomas para que split_genomes() funcione con estratificación 70/15/15.
 # Con menos genomas, algún split queda sin representantes de las dos clases.
@@ -117,6 +117,62 @@ def test_extract_single_genome(tmp_path):
     assert result_gid == gid
     assert vector.shape == (TOTAL_KMER_DIM,)
     assert vector.sum() > 0
+
+
+# ── extract_and_save_hier ──────────────────────────────────────────────────────
+
+
+def test_extract_single_genome_hier(tmp_path):
+    """Verifica que _extract_single_genome_hier retorna una matriz (64, 256)."""
+    gid = "hier.1"
+    _write_fasta(tmp_path / f"{gid}.fna")
+
+    result_gid, matrix = _extract_single_genome_hier(gid, tmp_path)
+
+    assert result_gid == gid
+    assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
+    assert matrix.dtype.kind == "f"
+    # Rows must be normalized (sum to ~1) or all-zero for degenerate segments
+    row_sums = matrix.sum(axis=1)
+    assert ((row_sums > 0.999) | (row_sums == 0.0)).all()
+
+
+def test_extract_and_save_hier_creates_npy_files(tmp_path):
+    """Verifica que extract_and_save_hier guarda un .npy por genoma en hier_bigru/."""
+    genome_ids = [f"h.{i}" for i in range(1, 5)]
+    fasta_dir = tmp_path / "fastas"
+    fasta_dir.mkdir()
+    for gid in genome_ids:
+        _write_fasta(fasta_dir / f"{gid}.fna")
+
+    extract_and_save_hier(genome_ids, fasta_dir, tmp_path, n_jobs=1)
+
+    hier_dir = tmp_path / "hier_bigru"
+    assert hier_dir.is_dir()
+    for gid in genome_ids:
+        npy_path = hier_dir / f"{gid}.npy"
+        assert npy_path.exists(), f"Missing {npy_path}"
+        matrix = numpy.load(npy_path)
+        assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
+
+
+def test_extract_and_save_hier_parallel_matches_sequential(tmp_path):
+    """Verifica que n_jobs=2 produce matrices idénticas a n_jobs=1."""
+    genome_ids = [f"hp.{i}" for i in range(1, 6)]
+    fasta_dir = tmp_path / "fastas"
+    fasta_dir.mkdir()
+    for gid in genome_ids:
+        _write_fasta(fasta_dir / f"{gid}.fna")
+
+    out_seq = tmp_path / "seq"
+    out_par = tmp_path / "par"
+    extract_and_save_hier(genome_ids, fasta_dir, out_seq, n_jobs=1)
+    extract_and_save_hier(genome_ids, fasta_dir, out_par, n_jobs=2)
+
+    for gid in genome_ids:
+        m_seq = numpy.load(out_seq / "hier_bigru" / f"{gid}.npy")
+        m_par = numpy.load(out_par / "hier_bigru" / f"{gid}.npy")
+        numpy.testing.assert_array_equal(m_seq, m_par)
 
 
 def test_parallel_matches_sequential(tmp_path):

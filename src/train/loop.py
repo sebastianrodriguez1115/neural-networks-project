@@ -72,14 +72,15 @@ def detect_device() -> torch.device:
 
 def _plot_history(history: pandas.DataFrame, output_path: Path) -> None:
     """
-    Genera gráficas de loss y F1 por época y las guarda como PNG.
+    Genera gráficas de loss, F1 y LR por época y las guarda como PNG.
 
-    Dos subplots:
+    Tres subplots:
         1. Loss (train y val) vs épocas — muestra convergencia y posible
            overfitting cuando las curvas divergen (Haykin, 2009, Fig. 4.17)
         2. F1 (val) vs épocas — métrica de interés clínico
+        3. Learning rate vs épocas — muestra cuándo actuó el scheduler
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
 
     # Subplot 1: Loss
     ax1.plot(history["epoch"], history["train_loss"], label="Train")
@@ -97,6 +98,15 @@ def _plot_history(history: pandas.DataFrame, output_path: Path) -> None:
     ax2.set_title("F1 por época")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
+
+    # Subplot 3: Learning rate (escala logarítmica para ver reducciones)
+    ax3.plot(history["epoch"], history["lr"], label="LR", color="orange")
+    ax3.set_xlabel("Época")
+    ax3.set_ylabel("Learning Rate")
+    ax3.set_title("Learning rate por época")
+    ax3.set_yscale("log")
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -256,6 +266,7 @@ def train(
     lr: float = 0.001,
     epochs: int = 100,
     patience: int = 10,
+    lr_patience: int = 5,
     output_dir: str | Path = "results/mlp",
     max_grad_norm: float | None = None,
     weight_decay: float = 0.0,
@@ -268,12 +279,11 @@ def train(
           y ajusta sus pesos para reducir el error (train_epoch).
         - Después de cada época, se evalúa sobre validación (evaluate)
           para monitorear la generalización.
-        - Early stopping: si la pérdida de validación no mejora durante
-          `patience` épocas consecutivas, se detiene el entrenamiento.
-          Esto evita la fase de sobreentrenamiento donde la red memoriza
-          ruido en vez de aprender patrones generales (Haykin, Fig. 4.17).
-        - Se guarda el checkpoint con mejor F1 en validación, que es la
-          métrica de interés clínico (no la loss).
+        - Early stopping: si el val_F1 no mejora durante `patience` épocas
+          consecutivas, se detiene el entrenamiento. Esto evita la fase de
+          sobreentrenamiento donde la red memoriza ruido en vez de aprender
+          patrones generales (Haykin, Fig. 4.17). El checkpoint y el contador
+          de paciencia usan la misma métrica (val_F1) para ser consistentes.
 
     Al terminar, evalúa sobre test set y genera:
         - best_model.pt   — pesos del mejor modelo
@@ -289,7 +299,10 @@ def train(
         lr: tasa de aprendizaje para Adam (default 0.001)
         weight_decay: regularización L2 (default 0.0)
         epochs: número máximo de épocas (default 100)
-        patience: épocas sin mejora antes de parar (default 10)
+        patience: épocas sin mejora en val_F1 antes de parar (default 10)
+        lr_patience: épocas sin mejora antes de reducir el LR a la mitad
+                     (default 5). Debe ser menor que patience para que el
+                     scheduler actúe antes del early stopping.
         output_dir: directorio para guardar resultados
 
     Retorna:
@@ -305,8 +318,17 @@ def train(
     # para arquitecturas recurrentes y transformers [Goodfellow16, Cap. 7].
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
+    # ReduceLROnPlateau [Goodfellow16, Cap. 8.5]: reduce el LR por un factor
+    # de 0.5 cuando val_F1 no mejora durante lr_patience épocas. Con lr_patience
+    # < patience, el scheduler puede rescatar el entrenamiento reduciendo el LR
+    # antes de que el early stopping lo detenga.
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="max", factor=0.5, patience=lr_patience
+    )
+
     # Estado de early stopping y checkpointing
-    best_val_loss = float("inf")
+    # Ambos (checkpoint y early stopping) monitorizan val_F1 para evitar
+    # parar el entrenamiento mientras la métrica de interés aún mejora.
     best_val_f1 = -1.0
     epochs_without_improvement = 0
     best_model_path = output_dir / "best_model.pt"
@@ -336,6 +358,10 @@ def train(
         # --- Evaluación sobre validación ---
         val_metrics = evaluate(model, val_loader, criterion, device)
 
+        # --- Scheduler: ajusta el LR según val_F1 ---
+        scheduler.step(val_metrics["f1"])
+        current_lr = optimizer.param_groups[0]["lr"]
+
         # Registrar métricas de esta época
         row = {
             "epoch": epoch,
@@ -346,35 +372,33 @@ def train(
             "val_recall": val_metrics["recall"],
             "val_f1": val_metrics["f1"],
             "val_auc_roc": val_metrics["auc_roc"],
+            "lr": current_lr,
         }
         history_rows.append(row)
 
         logger.info(
-            "Época %3d/%d — train_loss: %.4f | val_loss: %.4f | val_f1: %.4f | val_recall: %.4f",
+            "Época %3d/%d — train_loss: %.4f | val_loss: %.4f | val_f1: %.4f | val_recall: %.4f | lr: %.2e",
             epoch,
             epochs,
             train_loss,
             val_metrics["loss"],
             val_metrics["f1"],
             val_metrics["recall"],
+            current_lr,
         )
 
-        # --- Checkpoint: guardar si es el mejor F1 en validación ---
+        # --- Checkpoint + Early stopping: ambos monitorizan val_F1 ---
         if val_metrics["f1"] > best_val_f1:
             best_val_f1 = val_metrics["f1"]
+            epochs_without_improvement = 0
             torch.save(model.state_dict(), best_model_path)
             logger.info("  → Nuevo mejor modelo (val F1=%.4f), guardado.", best_val_f1)
-
-        # --- Early stopping: monitorear val loss ---
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
-            epochs_without_improvement = 0
         else:
             epochs_without_improvement += 1
 
         if epochs_without_improvement >= patience:
             logger.info(
-                "Early stopping en época %d (sin mejora en val_loss por %d épocas).",
+                "Early stopping en época %d (sin mejora en val_F1 por %d épocas).",
                 epoch,
                 patience,
             )

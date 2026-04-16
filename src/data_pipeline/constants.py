@@ -21,3 +21,11 @@ TOKEN_VOCAB_SIZE = 4 ** TOKEN_KMER_K  # 256 tokens válidos
 TOKEN_PAD_ID = TOKEN_VOCAB_SIZE  # 256 — token de padding (fuera del vocab)
 TOKEN_MAX_LEN = 4096             # longitud máxima de la secuencia
 TOKEN_EMBED_DIM = 64             # dimensión del embedding de k-meros
+
+# Hierarchical BiGRU — histogramas segmentados [nuevo]
+# El genoma se divide en HIER_N_SEGMENTS segmentos contiguos de igual longitud.
+# Cada segmento produce un histograma de k-meros normalizado de HIER_KMER_DIM dims.
+# Cobertura: 100% del genoma sin subsampling.
+HIER_KMER_K = 4                          # k-mero para cada segmento (vocab=256)
+HIER_KMER_DIM = 4 ** HIER_KMER_K        # 256 — dimensión del histograma por segmento
+HIER_N_SEGMENTS = 256                    # segmentos geográficos del genoma
