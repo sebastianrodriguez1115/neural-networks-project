@@ -169,6 +169,39 @@ Estado: `[ ]` pendiente · `[~]` en progreso · `[x]` completado
 - [x] Comparar: MLP vs BiGRU vs MultiBiGRU vs HierBiGRU vs HierSet — ver `docs/5_experiments.md`
 - [x] Criterio de éxito: AUC-ROC ≥ 0.900 en algún modelo jerárquico — **cumplido por HierSet (AUC=0.9368)**
 
+### 6.5 Documentación de ideas para la siguiente iteración de HierSet
+- [x] Escribir ideas de mejora arquitectónica para HierSet en `docs/IDEAS_MEJORA_HIERSET.md`
+
+---
+
+## Fase 7 — HierSet v2: multi-head attention + histogramas multi-escala
+
+Plan detallado en `plan_hier_set_v2.md`.
+
+### 7.1 Pipeline de datos multi-escala
+- [x] `HIER_KMER_SIZES`, `HIER_KMER_DIMS`, `HIER_KMER_DIM_MULTI`, `HIER_KMER_OFFSETS` en `src/data_pipeline/constants.py`
+- [x] `KmerExtractor.to_tiled_multiscale_matrix()`: divide el genoma en HIER_N_SEGMENTS segmentos, concatena histogramas k=3,4,5 → shape (256, 1344). Separador `N * (max_k - 1)` = 4 N's.
+- [x] `extract_and_save_hier_multi()` en `src/data_pipeline/pipeline.py`: extracción paralela con `n_jobs`, guarda `.npy` en `hier_set_v2/`
+- [x] Comando `prepare-hier-multi` en `main.py`
+- [x] 5 tests en `tests/data_pipeline/test_features.py` (shape, suma por fila, offsets por escala, empty fasta, no boundary k-mers)
+
+### 7.2 Modelo AMRHierSetV2
+- [x] `src/models/hier_set_v2/model.py`: multi-head cross-attention (H=4, d_head=32) vía `torch.einsum`, input 1344 dims/segmento, `_attention_weights` shape `[B, H, S]` para interpretabilidad.
+- [x] `src/models/hier_set_v2/dataset.py`: `HierSetV2Dataset` carga desde `hier_set_v2/` con validación de shape `(256, 1344)`
+- [x] 13 tests en `tests/models/test_hier_set_v2.py` (forward shape, attention shape+softmax por cabeza, permutation-invariance, atención varía por antibiótico, dataset con fixtures)
+- [x] Comando `train-hier-set-v2` en `main.py` (mismos hiperparámetros que `train-hier-set` para comparación justa)
+
+### 7.3 Experimento y evaluación
+- [x] Ejecutar `prepare-hier-multi --n-jobs -1` sobre los 9060 genomas
+- [x] Entrenar `train-hier-set-v2` y comparar contra HierSet v1 (F1=0.8900, AUC=0.9368)
+- [x] Objetivo: F1 ≥ 0.8950, AUC ≥ 0.9400, Recall ≥ 0.9000 → **No cumplido** (F1=0.8895, AUC=0.9366, Recall=0.8971 — resultado negativo)
+- [x] Actualizar `docs/5_experiments.md` (Experimento 7) con resultados
+
+### 7.4 Análisis post-hoc de umbrales por antibiótico
+- [x] Script `scripts/per_antibiotic_threshold.py` — evalúa umbrales por antibiótico offline sobre v1 sin reentrenar
+- [x] Resultado negativo: ΔF1 = −0.0048 (0.8900 → 0.8852) por sobreajuste del umbral al val set
+- [x] Documentado en `docs/5_experiments.md` (sección "Análisis post-hoc")
+
 ---
 
 ## Decisiones

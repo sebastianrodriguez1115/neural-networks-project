@@ -20,7 +20,20 @@ from data_pipeline.features import (
     normalize_features,
     split_genomes,
 )
-from data_pipeline.constants import BIGRU_PAD_DIM, HIER_KMER_DIM, HIER_KMER_K, HIER_N_SEGMENTS, KMER_DIMS, KMER_SIZES, TOTAL_KMER_DIM, TRAIN_RATIO
+from data_pipeline.constants import (
+    BIGRU_PAD_DIM,
+    HIER_KMER_DIM,
+    HIER_KMER_DIM_MULTI,
+    HIER_KMER_DIMS,
+    HIER_KMER_K,
+    HIER_KMER_OFFSETS,
+    HIER_KMER_SIZES,
+    HIER_N_SEGMENTS,
+    KMER_DIMS,
+    KMER_SIZES,
+    TOTAL_KMER_DIM,
+    TRAIN_RATIO,
+)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -242,6 +255,79 @@ def test_tiled_histogram_matrix_empty_fasta_returns_zeros(tmp_path):
 
     assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM)
     assert matrix.sum() == pytest.approx(0.0)
+
+
+# ── to_tiled_multiscale_matrix ────────────────────────────────────────────────
+
+
+def test_tiled_multiscale_matrix_shape(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 2000)
+
+    matrix = KmerExtractor(fasta).to_tiled_multiscale_matrix()
+
+    assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM_MULTI)
+    assert matrix.dtype == numpy.float32
+
+
+def test_tiled_multiscale_matrix_rows_sum_to_len_kmer_sizes(tmp_path):
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 2000)
+
+    matrix = KmerExtractor(fasta).to_tiled_multiscale_matrix()
+
+    row_sums = matrix.sum(axis=1)
+    numpy.testing.assert_allclose(
+        row_sums,
+        numpy.full(HIER_N_SEGMENTS, len(HIER_KMER_SIZES)),
+        atol=1e-4,
+    )
+
+
+def test_tiled_multiscale_matrix_scale_offsets(tmp_path):
+    """Cada bloque por escala está normalizado a suma 1 independientemente."""
+    fasta = tmp_path / "genome.fna"
+    _write_fasta(fasta, "ACGT" * 2000)
+
+    matrix = KmerExtractor(fasta).to_tiled_multiscale_matrix()
+
+    for i, dim in enumerate(HIER_KMER_DIMS):
+        start, end = HIER_KMER_OFFSETS[i], HIER_KMER_OFFSETS[i + 1]
+        assert end - start == dim
+        block_sums = matrix[:, start:end].sum(axis=1)
+        numpy.testing.assert_allclose(block_sums, numpy.ones(HIER_N_SEGMENTS), atol=1e-4)
+
+
+def test_tiled_multiscale_matrix_empty_fasta_returns_zeros(tmp_path):
+    fasta = tmp_path / "empty.fna"
+    fasta.write_text(">c1\n\n")
+
+    matrix = KmerExtractor(fasta).to_tiled_multiscale_matrix()
+
+    assert matrix.shape == (HIER_N_SEGMENTS, HIER_KMER_DIM_MULTI)
+    assert matrix.sum() == pytest.approx(0.0)
+
+
+def test_tiled_multiscale_matrix_no_boundary_kmers(tmp_path):
+    """Con separador NNNN (max_k - 1 = 4) ningún k-mero (k=3,4,5) cruza contigs."""
+    from data_pipeline.constants import BASE_TO_INDEX
+
+    contig1 = "A" * 200
+    contig2 = "T" * 200
+    fasta = tmp_path / "genome.fna"
+    fasta.write_text(f">c1\n{contig1}\n>c2\n{contig2}\n")
+
+    matrix = KmerExtractor(fasta).to_tiled_multiscale_matrix(n_segments=4)
+
+    # k=5: AAAAT sería el k-mero espurio en la frontera sin separador
+    k = 5
+    boundary_idx = 0
+    for base in "AAAAT":
+        boundary_idx = (boundary_idx << 2) | BASE_TO_INDEX[base]
+
+    # offset del bloque k=5 en el vector multi-escala
+    k5_offset = HIER_KMER_OFFSETS[HIER_KMER_SIZES.index(k)]
+    assert matrix[:, k5_offset + boundary_idx].sum() == pytest.approx(0.0)
 
 
 # ── split_genomes ──────────────────────────────────────────────────────────────

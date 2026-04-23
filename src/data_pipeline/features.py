@@ -9,7 +9,10 @@ from sklearn.model_selection import train_test_split
 from .constants import (
     BASE_TO_INDEX,
     BIGRU_PAD_DIM,
+    HIER_KMER_DIM_MULTI,
+    HIER_KMER_DIMS,
     HIER_KMER_K,
+    HIER_KMER_SIZES,
     HIER_N_SEGMENTS,
     KMER_DIMS,
     KMER_SIZES,
@@ -153,6 +156,58 @@ class KmerExtractor:
             s = hist.sum()
             if s > 0:
                 matrix[i] = (hist / s).astype(numpy.float32)
+
+        return matrix
+
+    def to_tiled_multiscale_matrix(
+        self,
+        kmer_sizes: list[int] = HIER_KMER_SIZES,
+        n_segments: int = HIER_N_SEGMENTS,
+    ) -> numpy.ndarray:
+        """Divide el genoma en n_segments y calcula histogramas k=3,4,5 por segmento.
+
+        Extiende `to_tiled_histogram_matrix` con múltiples escalas. Cada segmento
+        produce un vector de 1344 dims (64 + 256 + 1024) que captura composición
+        nucleotídica (k=3), motivos cortos (k=4) y motivos largos (k=5).
+
+        El separador entre contigs usa max(kmer_sizes) - 1 N's para que ningún
+        k-mero cruce fronteras entre contigs de ensamblajes draft.
+
+        Retorna:
+            numpy.ndarray de shape (n_segments, sum(4**k for k in kmer_sizes))
+            con dtype float32. Cada bloque por escala está normalizado a suma 1,
+            por lo que cada fila suma len(kmer_sizes).
+        """
+        dims = [4**k for k in kmer_sizes]
+        total_dim = sum(dims)
+        offsets = [sum(dims[:i]) for i in range(len(dims) + 1)]
+
+        max_k = max(kmer_sizes)
+        separator = "N" * (max_k - 1)
+        full_seq = separator.join(self._read_sequences())
+        total_len = len(full_seq)
+
+        if total_len == 0:
+            return numpy.zeros((n_segments, total_dim), dtype=numpy.float32)
+
+        segment_size = total_len // n_segments
+        matrix = numpy.zeros((n_segments, total_dim), dtype=numpy.float32)
+
+        for i in range(n_segments):
+            start = i * segment_size
+            end = (i + 1) * segment_size if i < n_segments - 1 else total_len
+            segment = full_seq[start:end]
+            if not segment:
+                continue
+
+            for k, dim, off_start, off_end in zip(
+                kmer_sizes, dims, offsets[:-1], offsets[1:], strict=True
+            ):
+                hist = numpy.zeros(dim, dtype=numpy.float64)
+                self._count_kmers(segment, k, hist)
+                s = hist.sum()
+                if s > 0:
+                    matrix[i, off_start:off_end] = (hist / s).astype(numpy.float32)
 
         return matrix
 

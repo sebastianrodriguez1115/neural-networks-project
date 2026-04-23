@@ -1,0 +1,18 @@
+{
+  "model_type": "hier_set_v2",
+  "hier_n_segments": 256,
+  "hier_kmer_sizes": [
+    3,
+    4,
+    5
+  ],
+  "n_heads": 4,
+  "epochs": 100,
+  "batch_size": 32,
+  "lr": 0.001,
+  "patience": 15,
+  "lr_patience": 5,
+  "pos_weight_scale": 2.5,
+  "weight_decay": 0.001,
+  "device": "cuda"
+}

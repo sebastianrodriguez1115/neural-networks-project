@@ -1,5 +1,42 @@
 # CHANGELOG
 
+### 2026-04-19 (sesión 8)
+
+#### HierSet v2 — entrenamiento y resultado negativo
+- **Ejecutado `prepare-hier-multi --n-jobs -1`**: 9060 genomas procesados con histogramas multi-escala k=3,4,5 en `data/processed/hier_set_v2/`.
+- **Entrenado `train-hier-set-v2`** (100 épocas máx, early stopping en época 98; mejor val F1=0.8942 en época 83; umbral óptimo 0.5299).
+- **Resultados en test:** F1=**0.8895**, Recall=0.8971, AUC-ROC=0.9366. **No supera a HierSet v1** (F1=0.8900, AUC=0.9368) en ninguna métrica.
+  - ΔF1 = −0.0005, ΔAUC = −0.0002 (diferencias numéricas muy pequeñas; no se hizo test estadístico), ΔRecall = −0.0117 (más tangible pero modesto).
+  - Ningún objetivo cumplido (F1 ≥ 0.8950, AUC ≥ 0.9400, Recall ≥ 0.9000).
+- **Hipótesis no verificadas para la ausencia de mejora:** información multi-escala (k=3, k=5) posiblemente redundante con k=4 para la atención; cabezas posiblemente colapsadas a patrones similares; posible mala elección de hiperparámetros para la capacidad mayor de v2. No se midió correlación entre escalas ni diversidad entre cabezas, así que estas son conjeturas, no hallazgos.
+- **Decisión:** HierSet v1 se mantiene como mejor modelo del proyecto. v2 documentado como resultado negativo con la configuración ensayada; causas precisas abiertas.
+
+#### Análisis post-hoc — Umbrales por antibiótico (sobre HierSet v1)
+- **Motivación:** evaluar si un umbral óptimo por antibiótico mejora F1 aprovechando la variación de clase base R/S entre antibióticos (20%–89%).
+- **Script `scripts/per_antibiotic_threshold.py`** — inferencia offline con el checkpoint v1, sin reentrenar. Umbrales calibrados sobre val (min_samples=30), aplicados a test.
+- **Resultado negativo:** F1 bajó de 0.8900 a 0.8852 (**ΔF1 = −0.0048**). Solo 24 de 61 antibióticos tuvieron muestras suficientes; los umbrales calibrados son dispersos (0.16–0.88).
+- **Interpretación con reservas:** la dispersión de umbrales por antibiótico admite al menos dos causas plausibles que no separamos con la evidencia recolectada — (1) el umbral F1-óptimo depende del prior por antibiótico incluso bajo calibración perfecta, (2) posible miscalibración por antibiótico de `BCEWithLogitsLoss` con `pos_weight` (optimiza ranking, no calibración). **No medimos calibración directamente** (ECE, reliability diagrams), así que no podemos atribuir cuantitativamente. La hipótesis principal sobre por qué no generaliza a test es sobreajuste al val set por tamaño de muestra (~250/antibiótico), pero no se validó con cross-validation.
+- **Implicación cautelosa:** que HierSet v2 y la calibración por antibiótico no superen a v1 es **consistente con** la hipótesis de que la representación k-meros está cerca de su techo, pero no la prueba — hacen falta ablaciones sobre representaciones alternativas (p. ej. anotación biológica ResFinder/CARD) y mediciones directas de calibración.
+- **Docs actualizados:** `docs/5_experiments.md` (Experimento 7, "Análisis post-hoc", sección "Limitaciones", tabla consolidada), `docs/4_models.md` (tabla de hiperparámetros con columna v2), `docs/PROGRESS.md` (Fase 7.3 y 7.4 completadas), `src/README.md`.
+
+### 2026-04-17 (sesión 7)
+
+#### HierSet v2 — implementación (multi-head attention + histogramas multi-escala)
+- **Pipeline de datos multi-escala:** `KmerExtractor.to_tiled_multiscale_matrix()` divide el genoma en HIER_N_SEGMENTS segmentos y concatena histogramas k=3 (64 dims) + k=4 (256) + k=5 (1024) = 1344 dims por segmento. Separador entre contigs `N * (max_k - 1)` = 4 N's para que ningún k-mero cruce fronteras.
+- **Comando `prepare-hier-multi`** en `main.py`: extracción paralela que guarda `.npy` en `data/processed/hier_set_v2/`. No sobrescribe los datos de HierSet v1.
+- **Modelo `AMRHierSetV2`** (`src/models/hier_set_v2/`): multi-head cross-attention (H=4, d_head=32) vía `torch.einsum`. La única Linear que crece vs v1 es la proyección de entrada (1344→128 en lugar de 256→128, +139K params); la query `Linear(49→128)` y el clasificador son idénticos. `_attention_weights` shape `[B, H, S]` para interpretabilidad por cabeza.
+- **Comando `train-hier-set-v2`** en `main.py` con los mismos hiperparámetros de `train-hier-set` para comparación justa.
+- **Tests nuevos:** 5 en `test_features.py` (shape, suma por fila, offsets por escala, empty fasta, no boundary k-mers) + 13 en `test_hier_set_v2.py` (forward, multi-head attention shape+softmax por cabeza, permutation-invariance, atención varía por antibiótico, dataset con fixtures). Total: 180/180 tests pasando.
+- **Docs actualizados:** `AGENTS.md`, `src/README.md`, `docs/1_environment.md`, `docs/PROGRESS.md` (Fase 7).
+- **Pendiente:** ejecutar `prepare-hier-multi` y entrenar para comparar contra HierSet v1 (F1=0.8900, AUC=0.9368). Objetivo: F1 ≥ 0.8950, AUC ≥ 0.9400.
+
+### 2026-04-16 (sesión 6)
+
+#### Ideas de mejora para la siguiente iteración de HierSet
+- Creado `docs/IDEAS_MEJORA_HIERSET.md` con una recopilación de mejoras posibles para `HierSet`.
+- El documento prioriza seis líneas de trabajo: encoder condicionado por antibiótico, pooling multi-slot, atención con gating tipo MIL, MLP más profunda por segmento, híbrido `HierSet + MLP`, y self-attention ligera entre segmentos.
+- También deja explícito qué no priorizar primero: más secuencia, más segmentos por defecto, o solo aumentar `D_MODEL`.
+
 ### 2026-04-16 (sesión 5)
 
 #### Ajuste de umbral de despliegue HierSet (θ=0.40)
