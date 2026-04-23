@@ -29,3 +29,10 @@ TOKEN_EMBED_DIM = 64             # dimensión del embedding de k-meros
 HIER_KMER_K = 4                          # k-mero para cada segmento (vocab=256)
 HIER_KMER_DIM = 4 ** HIER_KMER_K        # 256 — dimensión del histograma por segmento
 HIER_N_SEGMENTS = 256                    # segmentos geográficos del genoma
+
+# HierSet v2 — histogramas multi-escala por segmento (k=3,4,5)
+# Cada segmento produce 64 + 256 + 1024 = 1344 dims concatenados.
+HIER_KMER_SIZES = [3, 4, 5]
+HIER_KMER_DIMS = [4**k for k in HIER_KMER_SIZES]           # [64, 256, 1024]
+HIER_KMER_DIM_MULTI = sum(HIER_KMER_DIMS)                  # 1344
+HIER_KMER_OFFSETS = [sum(HIER_KMER_DIMS[:i]) for i in range(len(HIER_KMER_DIMS) + 1)]

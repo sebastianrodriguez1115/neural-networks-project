@@ -25,7 +25,8 @@ proyecto_redes_neuronales/
 │   │   ├── bigru/        # Modelo BiGRU + Attention
 │   │   ├── multi_bigru/  # Encoder multi-stream order-independent
 │   │   ├── hier_bigru/   # HierBiGRU sobre histogramas segmentados
-│   │   └── hier_set/     # HierSet — encoder de conjunto (mejor modelo)
+│   │   ├── hier_set/     # HierSet — encoder de conjunto (mejor modelo)
+│   │   └── hier_set_v2/  # HierSet v2 — multi-head attention + multi-escala k=3,4,5
 │   ├── eda.py            # Análisis exploratorio (EDA)
 │   └── main.py           # CLI (Typer) — punto de entrada
 ├── tests/
@@ -35,7 +36,7 @@ proyecto_redes_neuronales/
 │   └── test_train.py     # Unit tests del loop de entrenamiento y métricas
 ├── data/
 │   ├── raw/              # Genomas FASTA descargados
-│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy) en subcarpetas mlp/, bigru/, hier_bigru/
+│   └── processed/        # Etiquetas CSV, vectores k-meros (.npy) en subcarpetas mlp/, bigru/, hier_bigru/, hier_set_v2/
 ├── results/              # Métricas, gráficas, checkpoints
 ├── notebooks/            # Exploración y visualización
 ├── docs/
@@ -93,11 +94,13 @@ uv run python main.py --help
 | `export-contradictions-cmd` | Exporta pares (genome_id, antibiotic) con etiquetas contradictorias a CSV | `docs/2_eda.md` |
 | `prepare-data` | Preprocesamiento completo: limpieza, k-meros, split, normalización | `docs/3_data_pipeline.md` |
 | `prepare-hier` | Extrae histogramas segmentados (HIER_N_SEGMENTS×256) para HierBiGRU y HierSet | `docs/4_models.md` |
+| `prepare-hier-multi` | Extrae histogramas multi-escala segmentados (HIER_N_SEGMENTS×1344, k=3,4,5) para HierSet v2 | `plan_hier_set_v2.md` |
 | `train-mlp` | Entrena y evalúa el Perceptrón Multicapa (MLP) | `docs/PLAN_MLP.md` |
 | `train-bigru` | Entrena y evalúa la BiGRU + Attention | `docs/PLAN_BIGRU.md` |
 | `train-multi-bigru` | Entrena y evalúa el encoder multi-stream order-independent | `docs/4_models.md` |
 | `train-hier-bigru` | Entrena y evalúa la HierBiGRU sobre histogramas segmentados | `docs/4_models.md` |
 | `train-hier-set` | Entrena y evalúa el HierSet — **mejor modelo** (F1=0.89, AUC=0.94) | `docs/4_models.md` |
+| `train-hier-set-v2` | Entrena y evalúa el HierSet v2 (multi-head attention + multi-escala) | `plan_hier_set_v2.md` |
 
 ## Tests
 

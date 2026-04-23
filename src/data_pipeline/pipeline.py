@@ -183,6 +183,48 @@ def _extract_single_genome_hier(
     return genome_id, extractor.to_tiled_histogram_matrix()
 
 
+def _extract_single_genome_hier_multi(
+    genome_id: str, fasta_dir: Path
+) -> tuple[str, numpy.ndarray]:
+    """Extrae histogramas multi-escala segmentados (HierSet v2) de un solo genoma."""
+    extractor = KmerExtractor(fasta_dir / f"{genome_id}.fna")
+    return genome_id, extractor.to_tiled_multiscale_matrix()
+
+
+def extract_and_save_hier_multi(
+    genome_ids: list[str],
+    fasta_dir: Path,
+    output_dir: Path,
+    n_jobs: int = 1,
+) -> None:
+    """Extrae histogramas multi-escala (k=3,4,5) segmentados y los guarda en hier_set_v2/."""
+    if n_jobs == 0 or n_jobs < -1:
+        raise ValueError(f"n_jobs debe ser >= 1 o -1, recibido: {n_jobs}")
+
+    logger.info("Extracting multi-scale segmented histograms (HierSet v2)")
+    hier_dir = output_dir / "hier_set_v2"
+    hier_dir.mkdir(parents=True, exist_ok=True)
+
+    total = len(genome_ids)
+    worker = partial(_extract_single_genome_hier_multi, fasta_dir=fasta_dir)
+
+    if n_jobs == 1:
+        for i, (genome_id, matrix) in enumerate(map(worker, genome_ids)):
+            numpy.save(hier_dir / f"{genome_id}.npy", matrix)
+            if (i + 1) % 10 == 0 or (i + 1) == total:
+                logger.info(f"[{i + 1}/{total}] Multi-scale histograms extracted: {genome_id}")
+    else:
+        workers = max(1, int(os.cpu_count() * 0.8)) if n_jobs == -1 else n_jobs
+        logger.info(f"Parallel multi-scale extraction: {total} genomes, {workers} workers")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(worker, gid): gid for gid in genome_ids}
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                genome_id, matrix = future.result()
+                numpy.save(hier_dir / f"{genome_id}.npy", matrix)
+                if (i + 1) % 10 == 0 or (i + 1) == total:
+                    logger.info(f"[{i + 1}/{total}] Multi-scale histograms extracted: {genome_id}")
+
+
 def extract_and_save_hier(
     genome_ids: list[str],
     fasta_dir: Path,

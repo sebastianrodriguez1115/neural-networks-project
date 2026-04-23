@@ -39,7 +39,12 @@ import typer
 from torch.utils.data import DataLoader
 
 from bvbrc import download_multiple_genomes_fasta, fetch_amr_labels
-from data_pipeline import run_pipeline, extract_and_save_tokens, extract_and_save_hier
+from data_pipeline import (
+    run_pipeline,
+    extract_and_save_tokens,
+    extract_and_save_hier,
+    extract_and_save_hier_multi,
+)
 from data_pipeline.constants import (
     RANDOM_SEED,
     TOKEN_KMER_K,
@@ -59,6 +64,8 @@ from models.hier_bigru.dataset import HierBiGRUDataset
 from models.hier_bigru.model import AMRHierBiGRU
 from models.hier_set.dataset import HierSetDataset
 from models.hier_set.model import AMRHierSet
+from models.hier_set_v2.dataset import HierSetV2Dataset
+from models.hier_set_v2.model import AMRHierSetV2
 from eda import export_contradictions, run_eda
 from train import detect_device, set_seed, train as run_training
 
@@ -350,6 +357,53 @@ def prepare_hier(
         n_jobs=n_jobs,
     )
     typer.echo(f"Features guardadas en: {data_dir}/hier_bigru/")
+
+
+@app.command(help="Extrae histogramas multi-escala segmentados (k=3,4,5) para HierSet v2.")
+def prepare_hier_multi(
+    data_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio con outputs del pipeline (splits.csv, etc.).",
+    ),
+    fasta_dir: Path = typer.Option(
+        Path("data/raw/fasta"),
+        help="Directorio con archivos .fna de genomas.",
+    ),
+    n_jobs: int = typer.Option(
+        1,
+        help="Número de procesos paralelos. Usa -1 para el 80% de los CPUs.",
+    ),
+):
+    """
+    Extrae histogramas multi-escala segmentados (k=3,4,5) para AMRHierSetV2.
+
+    Divide cada genoma en HIER_N_SEGMENTS segmentos y, por cada segmento, concatena
+    los histogramas k=3 (64 dims), k=4 (256 dims) y k=5 (1024 dims) → 1344 dims
+    por segmento. Los resultados se guardan en data/processed/hier_set_v2/.
+
+    NOTA: si se cambian HIER_N_SEGMENTS o HIER_KMER_SIZES en constants.py, este
+    comando debe volver a ejecutarse.
+    """
+    splits_path = data_dir / "splits.csv"
+    if not splits_path.exists():
+        typer.echo(f"Error: no se encontró splits.csv en {data_dir}. Ejecuta prepare-data primero.", err=True)
+        raise typer.Exit(code=1)
+
+    if not fasta_dir.is_dir():
+        typer.echo(f"Error: el directorio de FASTA no existe: {fasta_dir}", err=True)
+        raise typer.Exit(code=1)
+
+    splits = pandas.read_csv(splits_path, dtype={"genome_id": str})
+    genome_list = sorted(splits["genome_id"].unique())
+
+    typer.echo(f"Extrayendo histogramas multi-escala para {len(genome_list)} genomas...")
+    extract_and_save_hier_multi(
+        genome_ids=genome_list,
+        fasta_dir=fasta_dir,
+        output_dir=data_dir,
+        n_jobs=n_jobs,
+    )
+    typer.echo(f"Features guardadas en: {data_dir}/hier_set_v2/")
 
 
 @app.command(help="Entrena el MLP (shallow NN) sobre los datos preprocesados y evalúa sobre test set.")
@@ -907,6 +961,102 @@ def train_hier_set(
         "model_type": "hier_set",
         "hier_n_segments": HIER_N_SEGMENTS,
         "hier_kmer_k": HIER_KMER_K,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "lr": lr,
+        "patience": patience,
+        "lr_patience": lr_patience,
+        "pos_weight_scale": pos_weight_scale,
+        "weight_decay": weight_decay,
+        "device": str(device),
+    }
+    (output_dir / "params.json").write_text(json.dumps(params, indent=2))
+
+    test_metrics = run_training(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        criterion=criterion,
+        device=device,
+        lr=lr,
+        epochs=epochs,
+        patience=patience,
+        lr_patience=lr_patience,
+        output_dir=output_dir,
+        weight_decay=weight_decay,
+    )
+
+    typer.echo(f"\nResultados en test set:")
+    typer.echo(f"  F1:      {test_metrics['f1']:.4f}")
+    typer.echo(f"  Recall:  {test_metrics['recall']:.4f}")
+    typer.echo(f"  AUC-ROC: {test_metrics['auc_roc']:.4f}")
+    typer.echo(f"  Umbral:  {test_metrics['threshold_used']:.4f}")
+    typer.echo(f"\nGuardado en: {output_dir}")
+
+
+@app.command(help="Entrena el HierSet v2 (multi-head attention + histogramas multi-escala).")
+def train_hier_set_v2(
+    data_dir: Path = typer.Option(
+        Path("data/processed"),
+        help="Directorio con outputs del pipeline (splits.csv, hier_set_v2/, etc.).",
+    ),
+    output_dir: Path = typer.Option(
+        Path("results/hier_set_v2"),
+        help="Directorio donde guardar modelo, métricas y gráficas.",
+    ),
+    epochs: int = typer.Option(100, help="Número máximo de épocas."),
+    batch_size: int = typer.Option(32, help="Tamaño del mini-batch."),
+    lr: float = typer.Option(0.001, help="Tasa de aprendizaje para AdamW."),
+    patience: int = typer.Option(15, help="Épocas sin mejora para early stopping."),
+    lr_patience: int = typer.Option(5, help="Épocas sin mejora para reducir LR."),
+    pos_weight_scale: float = typer.Option(
+        2.5,
+        "--pos-weight-scale",
+        help="Factor multiplicador del pos_weight base [King20].",
+    ),
+    weight_decay: float = typer.Option(
+        1e-3,
+        "--weight-decay",
+        help="Regularización L2 con AdamW [Loshchilov19].",
+    ),
+):
+    """
+    Entrena AMRHierSetV2 — multi-head cross-attention (H=4) sobre histogramas
+    multi-escala (k=3,4,5) segmentados. Mismos hiperparámetros de entrenamiento
+    que train-hier-set para comparación justa con v1.
+    """
+    set_seed(RANDOM_SEED)
+    device = detect_device()
+    typer.echo(f"Dispositivo: {device}")
+
+    typer.echo("Cargando datos (HierSet v2)...")
+    train_ds = HierSetV2Dataset(data_dir, split="train")
+    val_ds = HierSetV2Dataset(data_dir, split="val")
+    test_ds = HierSetV2Dataset(data_dir, split="test")
+    typer.echo(f"Muestras — train: {len(train_ds)}, val: {len(val_ds)}, test: {len(test_ds)}")
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size)
+    test_loader = DataLoader(test_ds, batch_size=batch_size)
+
+    model = AMRHierSetV2.from_antibiotic_index(str(data_dir / "antibiotic_index.csv"))
+    typer.echo(f"Modelo: {sum(p.numel() for p in model.parameters())} parámetros")
+
+    base_pos_weight = HierSetV2Dataset.load_pos_weight(data_dir)
+    scaled_pos_weight = base_pos_weight * pos_weight_scale
+    criterion = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([scaled_pos_weight], device=device),
+    )
+    typer.echo(f"pos_weight base: {base_pos_weight:.4f} → escalado: {scaled_pos_weight:.4f}")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    params = {
+        "model_type": "hier_set_v2",
+        "hier_n_segments": HIER_N_SEGMENTS,
+        "hier_kmer_sizes": [3, 4, 5],
+        "n_heads": 4,
         "epochs": epochs,
         "batch_size": batch_size,
         "lr": lr,

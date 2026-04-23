@@ -129,22 +129,24 @@ uv run python main.py train-bigru --epochs 50 --batch-size 16 --lr 0.0005
 
 ## Hiperparámetros finales
 
-| Hiperparámetro | MLP | BiGRU | MultiBiGRU | HierBiGRU | HierSet |
-|---|---|---|---|---|---|
-| Embedding antibiótico | 49 | 49 | 49 | 49 | 49 |
-| Hidden size RNN/proj | — | 128 | 64/stream | 128 | 128 |
-| Dropout | 0.3 | 0.3 | 0.3 | 0.3 | 0.3 |
-| Learning rate | 0.001 | 0.001 | 0.001 | 0.001 | 0.001 |
-| Optimizador | AdamW | AdamW | AdamW | AdamW | AdamW |
-| weight_decay | — | — | 1e-4 | — | 1e-3 |
-| Gradient clipping | — | 1.0 | — | 1.0 | — |
-| pos_weight_scale | 1.0 | 2.5 | 2.5 | 2.5 | 2.5 |
-| Early stopping patience | 10 | 10 | 15 | 15 | 15 |
-| **F1 (test)** | 0.8600 | 0.8566 | 0.8514 | 0.8307 | **0.8900** |
-| **AUC-ROC (test)** | 0.9035 | 0.8998 | 0.8944 | 0.8539 | **0.9368** |
-| **Recall (test)** | 0.9165 | 0.9032 | 0.8925 | 0.8788 | 0.9088 |
+| Hiperparámetro | MLP | BiGRU | MultiBiGRU | HierBiGRU | HierSet | HierSet v2 |
+|---|---|---|---|---|---|---|
+| Embedding antibiótico | 49 | 49 | 49 | 49 | 49 | 49 |
+| Hidden size RNN/proj | — | 128 | 64/stream | 128 | 128 | 128 |
+| Attention heads | — | 1 | 1/stream | 1 | 1 | 4 (d_head=32) |
+| Input por segmento | — | — | — | 256 (k=4) | 256 (k=4) | 1344 (k=3,4,5) |
+| Dropout | 0.3 | 0.3 | 0.3 | 0.3 | 0.3 | 0.3 |
+| Learning rate | 0.001 | 0.001 | 0.001 | 0.001 | 0.001 | 0.001 |
+| Optimizador | AdamW | AdamW | AdamW | AdamW | AdamW | AdamW |
+| weight_decay | — | — | 1e-4 | — | 1e-3 | 1e-3 |
+| Gradient clipping | — | 1.0 | — | 1.0 | — | — |
+| pos_weight_scale | 1.0 | 2.5 | 2.5 | 2.5 | 2.5 | 2.5 |
+| Early stopping patience | 10 | 10 | 15 | 15 | 15 | 15 |
+| **F1 (test)** | 0.8600 | 0.8566 | 0.8514 | 0.8307 | **0.8900** | 0.8895 |
+| **AUC-ROC (test)** | 0.9035 | 0.8998 | 0.8944 | 0.8539 | **0.9368** | 0.9366 |
+| **Recall (test)** | 0.9165 | 0.9032 | 0.8925 | 0.8788 | 0.9088 | 0.8971 |
 
-**Modelo seleccionado: HierSet** — mejor F1 y AUC-ROC del proyecto.
+**Modelo seleccionado: HierSet v1** — mejor F1 y AUC-ROC del proyecto. HierSet v2 (multi-head + multi-escala) empata en F1/AUC pero pierde en Recall; documentado como resultado negativo en `docs/5_experiments.md` (Experimento 7).
 
 ---
 

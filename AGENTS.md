@@ -21,6 +21,7 @@ Proyecto académico: predecir resistencia antimicrobiana (AMR) en bacterias a pa
 | `src/data_pipeline/` | Paquete de preprocesamiento: etiquetas, k-meros, splits |
 | `src/models/base_dataset.py` | `BaseAMRDataset` — Dataset base de PyTorch para todos los modelos |
 | `src/models/hier_set/` | `AMRHierSet` — **mejor modelo** (F1=0.89, AUC=0.94) |
+| `src/models/hier_set_v2/` | `AMRHierSetV2` — multi-head attention + histogramas multi-escala (pendiente de entrenamiento) |
 | `src/models/mlp/` | `AMRMLP` — MLP baseline |
 | `src/train/` | Paquete de entrenamiento: evaluación, loop, early stopping |
 | `main.py` | Punto de entrada CLI (Typer) |
