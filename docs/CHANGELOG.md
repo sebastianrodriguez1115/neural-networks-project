@@ -1,5 +1,16 @@
 # CHANGELOG
 
+### 2026-05-19
+
+#### Template IEEE LaTeX
+- Descargado y extraído el template oficial de IEEE Transactions on Magnetics en `docs/ieee_latex_template/`, incluyendo `IEEEtran.cls`, ejemplos `bare_*.tex`, instrucciones PDF y estilos BibTeX.
+- Reducida `docs/ieee_latex_template/` a los archivos mínimos (`IEEEtran.cls`, `IEEEtran.bst`, `README.md`) y documentados los links oficiales de descarga junto con el contenido de los ZIP.
+- Creada `docs/term_report/main.tex` como plantilla LaTeX del informe final con placeholders para cada sección exigida en `docs/term_report/NN - TERM PROJECT- FINAL REPORT-2026-I.pdf`; compilación verificada en `docs/term_report/main.pdf`.
+
+#### Guia de estudio Deep NN: formato PDF
+- Convertidas las ecuaciones principales de `docs/STUDY_GUIDE_DEEP_NN.md` a sintaxis LaTeX para mejorar el renderizado en PDF.
+- Regenerado `docs/STUDY_GUIDE_DEEP_NN.pdf` con `xelatex`, fuentes DejaVu y margen de 2 cm.
+
 ### 2026-04-19 (sesión 8)
 
 #### HierSet v2 — entrenamiento y resultado negativo

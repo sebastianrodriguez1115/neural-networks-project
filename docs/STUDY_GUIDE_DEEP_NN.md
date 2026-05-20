@@ -18,17 +18,22 @@ Una RNN resuelve esto procesando la entrada **un elemento a la vez**, manteniend
 
 ### 1.2 Vanilla RNN: ecuaciones basicas
 
-En cada paso de tiempo t, la RNN recibe:
-- x_t: el input actual (un vector)
-- h_{t-1}: el estado oculto del paso anterior (la "memoria")
+En cada paso de tiempo $t$, la RNN recibe:
+- $x_t$: el input actual (un vector)
+- $h_{t-1}$: el estado oculto del paso anterior (la "memoria")
 
 Y produce:
-- h_t = tanh(W_hh * h_{t-1} + W_xh * x_t + b_h)
-- y_t = W_hy * h_t + b_y
 
-El estado oculto h_t es una funcion del input actual Y de todo lo que vio antes (a traves de h_{t-1}, que a su vez depende de h_{t-2}, etc.).
+$$
+\begin{aligned}
+h_t &= \tanh(W_{hh}h_{t-1} + W_{xh}x_t + b_h) \\
+y_t &= W_{hy}h_t + b_y
+\end{aligned}
+$$
 
-**Concepto clave:** La misma matriz de pesos W_hh se reutiliza en cada paso de tiempo. Esto se llama **weight sharing** y es lo que permite procesar secuencias de longitud variable.
+El estado oculto $h_t$ es una funcion del input actual y de todo lo que vio antes (a traves de $h_{t-1}$, que a su vez depende de $h_{t-2}$, etc.).
+
+**Concepto clave:** La misma matriz de pesos $W_{hh}$ se reutiliza en cada paso de tiempo. Esto se llama **weight sharing** y es lo que permite procesar secuencias de longitud variable.
 
 **Fuente:** Haykin (2009), Cap. 15.1-15.2; Goodfellow et al. (2016), Cap. 10.1-10.2
 
@@ -36,10 +41,10 @@ El estado oculto h_t es una funcion del input actual Y de todo lo que vio antes 
 
 Para entrenar una RNN, se "desenrolla" la red en el tiempo — cada paso temporal se trata como una capa de una red profunda. Luego se aplica backpropagation normal sobre esta red desenrollada.
 
-El problema: si la secuencia tiene T pasos, los gradientes deben fluir a traves de T multiplicaciones por W_hh. Esto causa dos problemas:
+El problema: si la secuencia tiene $T$ pasos, los gradientes deben fluir a traves de $T$ multiplicaciones por $W_{hh}$. Esto causa dos problemas:
 
-1. **Gradientes explosivos (exploding gradients):** Si los eigenvalores de W_hh > 1, los gradientes crecen exponencialmente. La red se vuelve inestable.
-2. **Gradientes que se desvanecen (vanishing gradients):** Si los eigenvalores < 1, los gradientes se encojen exponencialmente. La red "olvida" lo que vio al inicio de la secuencia.
+1. **Gradientes explosivos (exploding gradients):** Si los eigenvalores de $W_{hh}$ son mayores que $1$, los gradientes crecen exponencialmente. La red se vuelve inestable.
+2. **Gradientes que se desvanecen (vanishing gradients):** Si los eigenvalores son menores que $1$, los gradientes se encojen exponencialmente. La red "olvida" lo que vio al inicio de la secuencia.
 
 **Fuentes:**
 - Haykin (2009), Cap. 15.3: "Backpropagation Through Time"
@@ -48,12 +53,13 @@ El problema: si la secuencia tiene T pasos, los gradientes deben fluir a traves 
 
 ### 1.4 Gradient Clipping
 
-Solucion parcial al problema de gradientes explosivos. Antes de actualizar los pesos, se calcula la norma L2 del vector de gradientes. Si excede un umbral (max_grad_norm), se reescala:
+Solucion parcial al problema de gradientes explosivos. Antes de actualizar los pesos, se calcula la norma $L_2$ del vector de gradientes. Si excede un umbral (`max_grad_norm`), se reescala:
 
-```
-if ||g|| > max_grad_norm:
-    g = g * (max_grad_norm / ||g||)
-```
+$$
+\text{si } \lVert g \rVert_2 > \texttt{max\_grad\_norm},
+\quad
+g \leftarrow g \cdot \frac{\texttt{max\_grad\_norm}}{\lVert g \rVert_2}
+$$
 
 En el proyecto usamos `max_grad_norm=1.0`. Esto limita la magnitud de cada paso de actualizacion, evitando que un solo batch con gradientes anomalos destruya los pesos aprendidos.
 
@@ -73,35 +79,43 @@ La GRU fue propuesta por Cho et al. (2014) como una alternativa mas simple a la 
 
 ### 2.2 Ecuaciones de la GRU
 
-En cada paso t:
+En cada paso $t$:
 
 **Compuerta de reinicio (reset gate):**
-```
-r_t = sigma(W_r * [h_{t-1}, x_t])
-```
+
+$$
+r_t = \sigma\left(W_r [h_{t-1}, x_t]\right)
+$$
+
 Decide cuanto del estado anterior "olvidar" al calcular el candidato.
 
 **Compuerta de actualizacion (update gate):**
-```
-z_t = sigma(W_z * [h_{t-1}, x_t])
-```
+
+$$
+z_t = \sigma\left(W_z [h_{t-1}, x_t]\right)
+$$
+
 Decide cuanto del nuevo candidato usar vs cuanto del estado anterior conservar.
 
 **Estado candidato:**
-```
-h_tilde = tanh(W * [r_t * h_{t-1}, x_t])
-```
-Propuesta de nuevo estado, usando solo la parte "relevante" del estado anterior (filtrada por r_t).
+
+$$
+\tilde{h}_t = \tanh\left(W [r_t \odot h_{t-1}, x_t]\right)
+$$
+
+Propuesta de nuevo estado, usando solo la parte "relevante" del estado anterior (filtrada por $r_t$).
 
 **Estado final:**
-```
-h_t = (1 - z_t) * h_{t-1} + z_t * h_tilde
-```
-Interpolacion entre el estado anterior y el candidato. Si z_t ≈ 0, se conserva el estado anterior (memoria a largo plazo). Si z_t ≈ 1, se adopta el candidato (actualizar con informacion nueva).
+
+$$
+h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t
+$$
+
+Interpolacion entre el estado anterior y el candidato. Si $z_t \approx 0$, se conserva el estado anterior (memoria a largo plazo). Si $z_t \approx 1$, se adopta el candidato (actualizar con informacion nueva).
 
 ### 2.3 Por que resuelve los gradientes que se desvanecen
 
-La ecuacion `h_t = (1 - z_t) * h_{t-1} + z_t * h_tilde` crea un **atajo lineal** (linear shortcut) entre h_{t-1} y h_t. Cuando z_t ≈ 0, el gradiente fluye directamente de h_t a h_{t-1} sin multiplicaciones por matrices de pesos. Esto permite que la informacion persista a traves de muchos pasos de tiempo sin degradarse.
+La ecuacion $h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t$ crea un **atajo lineal** (linear shortcut) entre $h_{t-1}$ y $h_t$. Cuando $z_t \approx 0$, el gradiente fluye directamente de $h_t$ a $h_{t-1}$ sin multiplicaciones por matrices de pesos. Esto permite que la informacion persista a traves de muchos pasos de tiempo sin degradarse.
 
 Es analogo a las conexiones residuales (skip connections) en ResNets — la red puede aprender a "no modificar" el estado oculto en pasos donde no hay informacion relevante.
 
@@ -110,8 +124,8 @@ Es analogo a las conexiones residuales (skip connections) en ResNets — la red 
 | Aspecto | GRU | LSTM |
 |---|---|---|
 | Compuertas | 2 (reset, update) | 3 (input, forget, output) |
-| Estado | Solo h_t | h_t (hidden) + c_t (cell state) |
-| Parametros | Menos (~25% menos que LSTM equivalente) | Mas |
+| Estado | Solo $h_t$ | $h_t$ (hidden) + $c_t$ (cell state) |
+| Parametros | Menos ($\sim 25\%$ menos que LSTM equivalente) | Mas |
 | Rendimiento | Similar en la mayoria de tareas | Similar, a veces mejor en secuencias muy largas |
 | Velocidad | Mas rapido (menos operaciones por paso) | Mas lento |
 
@@ -128,18 +142,19 @@ En el proyecto elegimos GRU siguiendo a [Lugo21], donde funciona bien para secue
 
 ### 3.1 Concepto
 
-Una RNN unidireccional procesa la secuencia de izquierda a derecha: en cada paso t, solo tiene informacion de x_1, ..., x_t. Pero en muchas tareas, el contexto futuro tambien es relevante.
+Una RNN unidireccional procesa la secuencia de izquierda a derecha: en cada paso $t$, solo tiene informacion de $x_1, \ldots, x_t$. Pero en muchas tareas, el contexto futuro tambien es relevante.
 
 Una BiRNN usa **dos RNNs independientes:**
-- **Forward RNN:** procesa x_1, x_2, ..., x_T → produce h_1→, h_2→, ..., h_T→
-- **Backward RNN:** procesa x_T, x_{T-1}, ..., x_1 → produce h_1←, h_2←, ..., h_T←
+- **Forward RNN:** procesa $x_1, x_2, \ldots, x_T$ y produce $\overrightarrow{h}_1, \overrightarrow{h}_2, \ldots, \overrightarrow{h}_T$.
+- **Backward RNN:** procesa $x_T, x_{T-1}, \ldots, x_1$ y produce $\overleftarrow{h}_1, \overleftarrow{h}_2, \ldots, \overleftarrow{h}_T$.
 
 El estado oculto final en cada posicion es la **concatenacion** de ambas direcciones:
-```
-h_t = [h_t→ ; h_t←]
-```
 
-Si cada GRU tiene `hidden_size=128`, el estado concatenado tiene dimension `128 * 2 = 256`.
+$$
+h_t = \left[\overrightarrow{h}_t; \overleftarrow{h}_t\right]
+$$
+
+Si cada GRU tiene `hidden_size=128`, el estado concatenado tiene dimension $128 \times 2 = 256$.
 
 ### 3.2 Por que es util para genomas
 
@@ -170,7 +185,7 @@ self.gru = nn.GRU(
 
 ### 4.1 Motivacion: el problema del cuello de botella
 
-Sin atencion, una RNN bidireccional produce T estados ocultos (uno por timestep). Para clasificacion, necesitamos comprimir toda esa secuencia en un solo vector. La solucion naive es tomar el ultimo estado oculto, pero esto fuerza toda la informacion de la secuencia a pasar por un unico vector de dimension fija — un cuello de botella.
+Sin atencion, una RNN bidireccional produce $T$ estados ocultos (uno por timestep). Para clasificacion, necesitamos comprimir toda esa secuencia en un solo vector. La solucion naive es tomar el ultimo estado oculto, pero esto fuerza toda la informacion de la secuencia a pasar por un unico vector de dimension fija — un cuello de botella.
 
 La atencion resuelve esto: en lugar de usar solo el ultimo estado, calcula una **suma ponderada** de todos los estados ocultos, donde los pesos indican cuales son mas relevantes para la tarea.
 
@@ -179,29 +194,35 @@ La atencion resuelve esto: en lugar de usar solo el ultimo estado, calcula una *
 Propuesta por Bahdanau, Cho & Bengio (2015) para traduccion automatica. Las ecuaciones:
 
 **Paso 1 — Calcular "energia" de cada timestep:**
-```
-e_t = v_a^T * tanh(W_a * h_t)
-```
-W_a proyecta cada estado oculto a un espacio de atencion, tanh introduce no-linealidad, y v_a produce un score escalar. La energia indica "cuanta informacion relevante contiene el timestep t".
+
+$$
+e_t = v_a^\top \tanh(W_a h_t)
+$$
+
+$W_a$ proyecta cada estado oculto a un espacio de atencion, $\tanh$ introduce no-linealidad, y $v_a$ produce un score escalar. La energia indica "cuanta informacion relevante contiene el timestep $t$".
 
 **Paso 2 — Normalizar con softmax:**
-```
-alpha_t = exp(e_t) / sum_j(exp(e_j))
-```
-Los pesos alpha_t forman una distribucion de probabilidad sobre la secuencia. Suman 1 y compiten entre si: si un timestep tiene energia alta, "roba" atencion de los demas.
+
+$$
+\alpha_t = \frac{\exp(e_t)}{\sum_j \exp(e_j)}
+$$
+
+Los pesos $\alpha_t$ forman una distribucion de probabilidad sobre la secuencia. Suman $1$ y compiten entre si: si un timestep tiene energia alta, "roba" atencion de los demas.
 
 **Paso 3 — Suma ponderada (vector de contexto):**
-```
-context = sum_t(alpha_t * h_t)
-```
+
+$$
+\text{context} = \sum_t \alpha_t h_t
+$$
+
 El vector de contexto es un promedio ponderado de todos los estados ocultos, donde los pesos reflejan la relevancia de cada posicion.
 
 ### 4.3 Atencion multiplicativa (Luong)
 
 Alternativa propuesta por Luong, Pham & Manning (2015). En lugar de una red neuronal para calcular la energia, usa un producto escalar (dot product) o un producto bilineal:
 
-- **Dot:** `e_t = h_t^T * h_s` (solo funciona si las dimensiones coinciden)
-- **General:** `e_t = h_t^T * W_a * h_s` (mas flexible)
+- **Dot:** $e_t = h_t^\top h_s$ (solo funciona si las dimensiones coinciden)
+- **General:** $e_t = h_t^\top W_a h_s$ (mas flexible)
 
 Es computacionalmente mas eficiente que la aditiva. En la practica, ambos tipos dan resultados similares.
 
@@ -209,8 +230,8 @@ Es computacionalmente mas eficiente que la aditiva. En la practica, ambos tipos 
 
 ### 4.4 Atencion como interpretabilidad
 
-Los pesos de atencion alpha_t indican **donde mira el modelo**. En nuestro proyecto:
-- Para la BiGRU con histogramas: los pesos muestran que bins de k-meros son mas informativos (se encontro que k=3 concentra 86.77% de la atencion)
+Los pesos de atencion $\alpha_t$ indican **donde mira el modelo**. En nuestro proyecto:
+- Para la BiGRU con histogramas: los pesos muestran que bins de k-meros son mas informativos (se encontro que $k=3$ concentra $86.77\%$ de la atencion)
 - Para el Token BiGRU: los pesos indican que posiciones del genoma (muestreadas) son relevantes para la prediccion de resistencia
 
 Esto convierte a la atencion en una herramienta de interpretabilidad — no solo mejora el rendimiento sino que permite entender que aprende el modelo.
@@ -251,7 +272,7 @@ Internamente, nn.Embedding es simplemente una **tabla de lookup** — una matriz
 
 ### 5.3 Embedding de antibioticos
 
-En el proyecto, cada antibiotico se representa como un indice entero (0-89). El embedding mapea este indice a un vector de 49 dimensiones. La dimension 49 se eligio con la heuristica `min(50, (n_antibiotics // 2) + 1)` con n_antibiotics=96.
+En el proyecto, cada antibiotico se representa como un indice entero (0-89). El embedding mapea este indice a un vector de 49 dimensiones. La dimension 49 se eligio con la heuristica `min(50, (n_antibiotics // 2) + 1)` con $n_{\text{antibiotics}}=96$.
 
 El embedding permite que el modelo aprenda relaciones entre antibioticos: antibioticos de la misma familia (e.g., carbapenems) deberian terminar con embeddings cercanos si confieren patrones de resistencia similares.
 
@@ -283,8 +304,8 @@ El **dilema sesgo-varianza** (bias-variance tradeoff) es central: un modelo con 
 Propuesto por Srivastava et al. (2014). Durante el entrenamiento, cada neurona se "apaga" (se pone a cero) con probabilidad p en cada forward pass. Esto tiene varios efectos:
 
 1. **Evita co-adaptacion:** Las neuronas no pueden depender de neuronas especificas, forzando redundancia en la representacion.
-2. **Ensemble implicito:** Cada forward pass entrena una "sub-red" diferente. El modelo final es un ensemble de ~2^N sub-redes.
-3. **En inferencia (eval):** NO se aplica dropout. Las activaciones se escalan por (1-p) para compensar (en PyTorch esto se hace automaticamente).
+2. **Ensemble implicito:** Cada forward pass entrena una "sub-red" diferente. El modelo final es un ensemble de aproximadamente $2^N$ sub-redes.
+3. **En inferencia (eval):** NO se aplica dropout. Las activaciones se escalan por $(1-p)$ para compensar (en PyTorch esto se hace automaticamente).
 
 En el proyecto:
 - `Dropout(0.3)` en el clasificador (todas las arquitecturas)
@@ -308,17 +329,17 @@ Con `num_layers=1`, el parametro `dropout` se ignora silenciosamente — es por 
 
 Agrega un termino a la funcion de perdida que penaliza los pesos grandes:
 
-```
-Loss_total = Loss_BCE + lambda * sum(w_i^2)
-```
+$$
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{BCE}} + \lambda \sum_i w_i^2
+$$
 
 Esto "empuja" todos los pesos hacia cero, forzando al modelo a encontrar soluciones con pesos pequenios. Funciones con pesos pequenios tienden a ser mas suaves y generalizar mejor.
 
-En la practica, PyTorch implementa L2 como `weight_decay` en el optimizador, que suma `lambda * w` al gradiente antes de la actualizacion.
+En la practica, PyTorch implementa $L_2$ como `weight_decay` en el optimizador, que suma $\lambda w$ al gradiente antes de la actualizacion.
 
 ### 6.5 Adam vs AdamW: diferencia en weight decay
 
-- **Adam + weight_decay:** Suma `lambda * w` al gradiente *antes* del escalado adaptativo. Los parametros con gradientes grandes reciben mas L2 — no es lo ideal.
+- **Adam + weight_decay:** Suma $\lambda w$ al gradiente *antes* del escalado adaptativo. Los parametros con gradientes grandes reciben mas $L_2$ — no es lo ideal.
 - **AdamW (Loshchilov & Hutter, 2019):** Aplica el decaimiento de pesos *despues* del escalado adaptativo, desacoplado del gradiente. Mas correcto teoricamente.
 
 Con `weight_decay=1e-4` (pequenio), la diferencia practica es minima. Para valores mas grandes, AdamW es preferible.
@@ -344,9 +365,9 @@ Es una forma de regularizacion porque limita la capacidad efectiva del modelo: l
 
 Para clasificacion binaria, la funcion de perdida estandar es:
 
-```
-BCE = -[y * log(p) + (1-y) * log(1-p)]
-```
+$$
+\operatorname{BCE}(y, p) = -\left[y\log(p) + (1-y)\log(1-p)\right]
+$$
 
 Donde `y` es la etiqueta (0 o 1) y `p` es la probabilidad predicha.
 
@@ -362,13 +383,13 @@ El modelo produce **logits** (valores sin acotar), no probabilidades. La sigmoid
 
 Cuando las clases estan desbalanceadas, un error en la clase minoritaria deberia "costar mas" que un error en la mayoritaria. `pos_weight` multiplica la perdida de los ejemplos positivos:
 
-```
-BCE = -[pos_weight * y * log(p) + (1-y) * log(1-p)]
-```
+$$
+\operatorname{BCE}_{\text{weighted}}(y, p) = -\left[w_+ y\log(p) + (1-y)\log(1-p)\right]
+$$
 
 - `pos_weight > 1:` Penaliza mas los falsos negativos → sube recall
 - `pos_weight < 1:` Penaliza mas los falsos positivos → sube precision
-- `pos_weight = n_neg / n_pos:` Equilibra las clases
+- `pos_weight = n_neg / n_pos:` Equilibra las clases, con $w_+ = n_{\text{neg}} / n_{\text{pos}}$.
 
 En el proyecto, el `pos_weight` base se calcula como `n_susceptible / n_resistente` y luego se escala por un factor configurable (`pos_weight_scale`).
 
@@ -400,9 +421,9 @@ En el proyecto, despues del entrenamiento se busca el umbral que **maximiza F1 e
 
 El algoritmo fundamental: actualizar los pesos en la direccion opuesta al gradiente de la perdida:
 
-```
-w = w - lr * dL/dw
-```
+$$
+w \leftarrow w - \eta \frac{\partial \mathcal{L}}{\partial w}
+$$
 
 - **Batch GD:** Calcula el gradiente sobre todo el dataset → lento pero gradiente exacto
 - **Stochastic GD (SGD):** Un ejemplo a la vez → rapido pero ruidoso
@@ -415,15 +436,17 @@ Propuesto por Kingma & Ba (2015). Combina dos ideas:
 1. **Momentum:** Mantiene un promedio movil exponencial del gradiente (primer momento). Esto suaviza las oscilaciones y acelera la convergencia en la direccion consistente.
 2. **RMSProp:** Mantiene un promedio movil del gradiente al cuadrado (segundo momento). Esto adapta la tasa de aprendizaje por parametro — parametros con gradientes grandes reciben pasos mas pequenios.
 
-```
-m_t = beta_1 * m_{t-1} + (1 - beta_1) * g_t          # primer momento
-v_t = beta_2 * v_{t-1} + (1 - beta_2) * g_t^2        # segundo momento
-m_hat = m_t / (1 - beta_1^t)                          # correccion de sesgo
-v_hat = v_t / (1 - beta_2^t)                          # correccion de sesgo
-w = w - lr * m_hat / (sqrt(v_hat) + epsilon)           # actualizacion
-```
+$$
+\begin{aligned}
+m_t &= \beta_1 m_{t-1} + (1 - \beta_1) g_t && \text{primer momento} \\
+v_t &= \beta_2 v_{t-1} + (1 - \beta_2) g_t^2 && \text{segundo momento} \\
+\hat{m}_t &= \frac{m_t}{1 - \beta_1^t} && \text{correccion de sesgo} \\
+\hat{v}_t &= \frac{v_t}{1 - \beta_2^t} && \text{correccion de sesgo} \\
+w &\leftarrow w - \eta \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} && \text{actualizacion}
+\end{aligned}
+$$
 
-Defaults: `beta_1=0.9`, `beta_2=0.999`, `epsilon=1e-8`.
+Defaults: $\beta_1=0.9$, $\beta_2=0.999$, $\epsilon=10^{-8}$.
 
 **Fuente:** Kingma & Ba (2015): "Adam: A Method for Stochastic Optimization"
 
@@ -484,23 +507,23 @@ Dos formas fundamentales de representar datos secuenciales:
 
 ### 10.2 K-meros y el hash de 2 bits
 
-Un k-mero es una subsecuencia de k bases consecutivas de DNA. Con un alfabeto de 4 bases (A, C, G, T), existen 4^k posibles k-meros.
+Un k-mero es una subsecuencia de $k$ bases consecutivas de DNA. Con un alfabeto de 4 bases (A, C, G, T), existen $4^k$ posibles k-meros.
 
-El **hash de 2 bits** codifica cada base con 2 bits: A=00, C=01, G=10, T=11. Un k-mero de longitud k se codifica como un entero de 2k bits. Para k=4, esto da valores en [0, 255].
+El **hash de 2 bits** codifica cada base con 2 bits: A=00, C=01, G=10, T=11. Un k-mero de longitud $k$ se codifica como un entero de $2k$ bits. Para $k=4$, esto da valores en $[0, 255]$.
 
-El **rolling hash** permite actualizar el hash al deslizar la ventana una posicion, sin recalcular desde cero: se desplaza 2 bits a la izquierda, se agrega la nueva base, y se aplica una mascara para mantener solo 2k bits. Complejidad: O(1) por posicion, O(n) para todo el genoma.
+El **rolling hash** permite actualizar el hash al deslizar la ventana una posicion, sin recalcular desde cero: se desplaza 2 bits a la izquierda, se agrega la nueva base, y se aplica una mascara para mantener solo $2k$ bits. Complejidad: $O(1)$ por posicion, $O(n)$ para todo el genoma.
 
 **Fuente:** Compeau & Pevzner (2014), Cap. 9: codificacion 2-bit para k-meros
 
 ### 10.3 Subsampling uniforme
 
-Un genoma bacteriano tipico tiene ~4-5 millones de bases, generando millones de k-meros. Ninguna RNN puede procesar secuencias tan largas. El subsampling uniforme selecciona N posiciones equidistantes:
+Un genoma bacteriano tipico tiene aproximadamente 4-5 millones de bases, generando millones de k-meros. Ninguna RNN puede procesar secuencias tan largas. El subsampling uniforme selecciona $N$ posiciones equidistantes:
 
 ```python
 indices = numpy.linspace(0, total - 1, max_len, dtype=int)
 ```
 
-Con `max_len=4096` sobre un genoma de 4M bp, se toma un k-mero cada ~1,000 bp. Esto preserva cobertura global del genoma pero pierde localidad — los tokens vecinos en la secuencia de entrada estan separados ~1,000 bp en el genoma real.
+Con `max_len=4096` sobre un genoma de 4M bp, se toma un k-mero cada $\sim 1{,}000$ bp. Esto preserva cobertura global del genoma pero pierde localidad — los tokens vecinos en la secuencia de entrada estan separados $\sim 1{,}000$ bp en el genoma real.
 
 ### 10.4 Limitacion fundamental: cobertura vs posicion
 
@@ -512,7 +535,7 @@ Tokens (4096): Cobertura ~0.1%, posicion diluida → F1 = 0.81
 Ideal:         Cobertura 100%, posicion 100%    → requiere seq_len ~millones
 ```
 
-Los genes de resistencia ocupan ~0.02-0.2% del genoma. Con subsampling uniforme, un gen de 1,500 bp es cubierto por 1-2 tokens — insuficiente para que la BiGRU aprenda su estructura interna. Los histogramas, al ser un censo completo, capturan la "huella dactilar" de estos genes sin importar su ubicacion.
+Los genes de resistencia ocupan aproximadamente $0.02\%-0.2\%$ del genoma. Con subsampling uniforme, un gen de $1{,}500$ bp es cubierto por 1-2 tokens — insuficiente para que la BiGRU aprenda su estructura interna. Los histogramas, al ser un censo completo, capturan la "huella dactilar" de estos genes sin importar su ubicacion.
 
 ---
 
@@ -535,30 +558,36 @@ Real    Pos         TP     FN
 ### 11.2 Precision, Recall, F1
 
 **Precision:** De todos los que predije como positivos, cuantos realmente lo son?
-```
-Precision = TP / (TP + FP)
-```
+
+$$
+\operatorname{Precision} = \frac{TP}{TP + FP}
+$$
+
 Alta precision = pocas falsas alarmas.
 
 **Recall (Sensibilidad):** De todos los positivos reales, cuantos detecte?
-```
-Recall = TP / (TP + FN)
-```
+
+$$
+\operatorname{Recall} = \frac{TP}{TP + FN}
+$$
+
 Alto recall = pocos casos perdidos. **Metrica prioritaria en AMR** — no queremos dejar escapar bacterias resistentes.
 
 **F1-Score:** Media armonica de precision y recall:
-```
-F1 = 2 * (Precision * Recall) / (Precision + Recall)
-```
-Balancea ambas metricas. Es la metrica principal del proyecto (objetivo: F1 >= 0.85).
+
+$$
+F_1 = 2 \cdot \frac{\operatorname{Precision} \cdot \operatorname{Recall}}{\operatorname{Precision} + \operatorname{Recall}}
+$$
+
+Balancea ambas metricas. Es la metrica principal del proyecto (objetivo: $F_1 \ge 0.85$).
 
 ### 11.3 AUC-ROC
 
-La **curva ROC** grafica la tasa de verdaderos positivos (recall) vs la tasa de falsos positivos (FPR = FP/(FP+TN)) para todos los umbrales posibles de decision.
+La **curva ROC** grafica la tasa de verdaderos positivos (recall) vs la tasa de falsos positivos ($\operatorname{FPR} = FP/(FP+TN)$) para todos los umbrales posibles de decision.
 
 El **AUC-ROC** (Area Under the Curve) mide la capacidad de discriminacion del modelo independientemente del umbral:
-- AUC = 1.0: clasificador perfecto
-- AUC = 0.5: clasificador aleatorio (diagonal)
+- $\operatorname{AUC}=1.0$: clasificador perfecto
+- $\operatorname{AUC}=0.5$: clasificador aleatorio (diagonal)
 
 **Ventaja sobre F1:** AUC-ROC no depende del umbral elegido. Mide si el modelo **separa bien** las clases, no si las clasifica correctamente con un umbral especifico.
 

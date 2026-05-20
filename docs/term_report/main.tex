@@ -1,0 +1,127 @@
+\documentclass[journal,transmag]{../ieee_latex_template/IEEEtran}
+
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{url}
+
+\graphicspath{{../imagenes/}{figures/}}
+
+\begin{document}
+
+\title{Prediction of Antimicrobial Resistance from Whole-Genome Sequences Using Neural Networks}
+
+\author{First Author, Second Author, Third Author, and Fourth Author%
+\thanks{Neural Networks, 2026-I. Term project final report. Replace this note with team ID, affiliations, and submission metadata.}}
+
+\markboth{Neural Networks, 2026-I}{Term Project Final Report}
+
+\IEEEtitleabstractindextext{%
+\begin{abstract}
+Placeholder: summarize the problem, dataset, shallow neural network approach, deep neural network approach, final metrics, and main conclusion in 150--250 words. The abstract should be self-contained and written as one paragraph.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Antimicrobial resistance, deep learning, k-mers, neural networks, whole-genome sequencing.
+\end{IEEEkeywords}}
+
+\maketitle
+\IEEEdisplaynontitleabstractindextext
+\IEEEpeerreviewmaketitle
+
+\section{Project Goal and Scope}
+\IEEEPARstart{P}{laceholder}: state the project goal in a few executive sentences. Include the biological problem, the prediction target, and the intended scope of the shallow and deep neural network approaches.
+
+\section{Literature Review}
+Placeholder: define antimicrobial resistance, whole-genome sequencing, k-mers, binary classification, shallow neural networks, recurrent neural networks, attention, and evaluation metrics. Cite the most relevant background sources, for example neural network textbooks and AMR/WGS references \cite{haykin2009,goodfellow2016}.
+
+\section{Case Study}
+Placeholder: describe the specific paper or documented advance that motivates the project. Explain why it is relevant, what part of the approach it supports, and what limitations remain for this project.
+
+\section{Training Data Set}
+Placeholder: describe the source of the data, organisms included, antimicrobial susceptibility labels, number of genomes, number of genome-antibiotic records, class balance, and train/validation/test split. Clarify whether the split is stratified by genome ID.
+
+\section{Data Preprocessing and Exploratory Data Analysis}
+Placeholder: describe data cleaning, label normalization, FASTA processing, k-mer extraction, feature normalization, and exploratory analysis. Include the key plots and tables needed to summarize class imbalance, species distribution, antibiotic distribution, missingness, and relevant feature properties.
+
+\begin{figure}[!t]
+\centering
+% \includegraphics[width=\linewidth]{eda_placeholder.pdf}
+\fbox{\parbox{0.9\linewidth}{Placeholder figure: EDA summary, class balance, or data pipeline.}}
+\caption{Placeholder for an exploratory data analysis figure. Replace with a real figure from the project.}
+\label{fig:eda-placeholder}
+\end{figure}
+
+\section{Proposed Neural Network-Based Approaches}
+
+\subsection{Shallow Neural Network-Based Approach}
+Placeholder: describe the shallow baseline model. Explain feature engineering, feature selection or extraction, the final input vector, architecture, activation functions, regularization, optimizer, loss function, and threshold calibration.
+
+\subsection{Deep Neural Network-Based Approach}
+Placeholder: describe the deep model. Explain the selected architecture, input representation, antibiotic embedding, recurrent/attention/set encoder components, classifier head, regularization, optimizer, loss function, and why this architecture was chosen over alternatives.
+
+\subsection{Learning, Validation, and Testing Protocol}
+Placeholder: explain the training loop, validation strategy, early stopping, checkpointing criterion, random seed, class imbalance handling, and final test evaluation protocol.
+
+\section{Performance Evaluation and Final Results}
+Placeholder: report final metrics for the shallow and deep models. Include F1, recall, precision, AUC-ROC, confusion matrix, and any threshold used. Diagnose overfitting or underfitting using training and validation curves.
+
+\begin{table}[!t]
+\caption{Placeholder for Final Model Comparison}
+\label{tab:results-placeholder}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Model & F1 & Recall & Precision & AUC \\
+\midrule
+Shallow NN & -- & -- & -- & -- \\
+Deep NN & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Ethical Considerations and Questions}
+Placeholder: discuss clinical risk, false negatives, false positives, dataset bias, generalization limits, transparency, reproducibility, privacy, and responsible communication of model limitations.
+
+\section{Web Links to Source Code and Explanatory Video}
+
+\subsection{Source Code}
+Placeholder: provide the GitHub repository or equivalent URL. Briefly explain how the repository is organized and where the shallow and deep model implementations can be found.
+
+\subsection{Explanatory Video}
+Placeholder: provide the URL to the explanatory video and summarize what the video covers.
+
+\section{Contributions of the Team Members}
+Placeholder: describe roles, responsibilities, and concrete contributions. Replace Table~\ref{tab:team-contributions} with the final team information.
+
+\begin{table}[!t]
+\caption{Placeholder for Team Contributions}
+\label{tab:team-contributions}
+\centering
+\begin{tabular}{p{0.28\linewidth}p{0.25\linewidth}p{0.32\linewidth}}
+\toprule
+Team member & Role & Activities/contributions \\
+\midrule
+Member 1 & -- & -- \\
+Member 2 & -- & -- \\
+Member 3 & -- & -- \\
+Member 4 & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusions and Future Work}
+Placeholder: summarize the main findings, compare shallow and deep approaches, identify limitations, and propose future work such as biological annotation, calibration analysis, broader validation, or improved representations.
+
+\section{Use of Artificial Intelligence Tools}
+Placeholder: disclose whether AI tools were used to draft, review, debug, summarize, or generate code. State which tools were used, what parts they supported, and how the team verified the outputs.
+
+\section*{Acknowledgment}
+Placeholder: optional. Include course, instructor, institutional, or data-source acknowledgments if appropriate.
+
+\bibliographystyle{../ieee_latex_template/IEEEtran}
+\bibliography{references}
+
+\end{document}
