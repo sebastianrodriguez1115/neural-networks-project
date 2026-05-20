@@ -1,0 +1,22 @@
+graph TD
+    IN["Genomic Input<br/>(batch, 256 segs, 256 bins)<br/>HIER_N_SEGMENTS × histograma k=4"]
+    AIn["Antibiotic Input<br/>(batch)"]
+    NORM["LayerNorm(256)<br/>por segmento"]
+    PROJ["Linear(256 -> 128) + ReLU + Dropout(0.3)<br/>(independiente por segmento)"]
+    EMB["Antibiotic Embedding<br/>(n_antibiotics, 49)"]
+    QUERY["Linear(49 -> 128)<br/>query (batch, 128)"]
+    ATT["Cross-attention<br/>score(s,a) = h_s · q_a / sqrt(D)<br/>softmax -> weighted sum<br/>context (batch, 128)"]
+    CAT["Concatenate<br/>(batch, 177)"]
+    L1["Linear(177 -> 128) + ReLU + Dropout(0.3)"]
+    L2["Linear(128 -> 1)<br/>Logits (No Sigmoid)"]
+
+    IN --> NORM
+    NORM --> PROJ
+    PROJ --> ATT
+    AIn --> EMB
+    EMB --> QUERY
+    QUERY --> ATT
+    ATT --> CAT
+    EMB --> CAT
+    CAT --> L1
+    L1 --> L2
