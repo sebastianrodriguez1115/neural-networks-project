@@ -19,6 +19,7 @@ from .features import (
 )
 from .pipeline import (
     run_pipeline,
+    prepare_labels_for_download,
     _extract_and_save_tokens as extract_and_save_tokens,
     extract_and_save_hier,
     extract_and_save_hier_multi,
@@ -33,6 +34,7 @@ __all__ = [
     "mlp_vector_to_bigru_matrix",
     "split_genomes",
     "run_pipeline",
+    "prepare_labels_for_download",
     "extract_and_save_tokens",
     "extract_and_save_hier",
     "extract_and_save_hier_multi",

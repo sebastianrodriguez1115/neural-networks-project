@@ -88,11 +88,13 @@ uv run python main.py --help
 
 | Comando | Descripción | Documentación |
 |---|---|---|
-| `download-amr` | Descarga etiquetas AMR de BV-BRC para organismos ESKAPE | `docs/3_data_pipeline.md` |
-| `download-genomes` | Descarga archivos FASTA de los genomas del CSV de etiquetas | `docs/3_data_pipeline.md` |
+| `download-amr` | Descarga etiquetas AMR de BV-BRC (ESKAPE por defecto; `--all-taxa` para dataset expandido) | `docs/3_data_pipeline.md` |
+| `download-genomes` | Descarga archivos FASTA de los genomas del CSV de etiquetas; soporta `--n-jobs` | `docs/3_data_pipeline.md` |
 | `eda` | Análisis exploratorio: distribución, balance, outliers, baseline benchmark | `docs/2_eda.md` |
+| `eda-expanded` | EDA reproducible del dataset expandido all-taxa | `docs/2_eda.md` |
 | `export-contradictions-cmd` | Exporta pares (genome_id, antibiotic) con etiquetas contradictorias a CSV | `docs/2_eda.md` |
-| `prepare-data` | Preprocesamiento completo: limpieza, k-meros, split, normalización | `docs/3_data_pipeline.md` |
+| `prepare-labels-for-download` | Limpia labels expandidos antes de descargar FASTA | `docs/PLAN_DATASET_EXPANDIDO.md` |
+| `prepare-data` | Preprocesamiento completo: limpieza, k-meros, split, normalización; soporta `--locked-splits` | `docs/3_data_pipeline.md` |
 | `prepare-hier` | Extrae histogramas segmentados (HIER_N_SEGMENTS×256) para HierBiGRU y HierSet | `docs/4_models.md` |
 | `prepare-hier-multi` | Extrae histogramas multi-escala segmentados (HIER_N_SEGMENTS×1344, k=3,4,5) para HierSet v2 | `plan_hier_set_v2.md` |
 | `train-mlp` | Entrena y evalúa el Perceptrón Multicapa (MLP) | `docs/PLAN_MLP.md` |
@@ -100,6 +102,7 @@ uv run python main.py --help
 | `train-multi-bigru` | Entrena y evalúa el encoder multi-stream order-independent | `docs/4_models.md` |
 | `train-hier-bigru` | Entrena y evalúa la HierBiGRU sobre histogramas segmentados | `docs/4_models.md` |
 | `train-hier-set` | Entrena y evalúa el HierSet — **mejor modelo** (F1=0.89, AUC=0.94) | `docs/4_models.md` |
+| `evaluate-hier-set-checkpoint` | Evalúa un checkpoint HierSet sin reentrenar, opcionalmente por `split_source` | `docs/5_experiments.md` |
 | `train-hier-set-v2` | Entrena y evalúa el HierSet v2 (multi-head attention + multi-escala) | `plan_hier_set_v2.md` |
 
 ## Tests
@@ -114,4 +117,3 @@ uv run pytest -v
 # Un módulo específico
 uv run pytest tests/bvbrc/test_amr.py -v
 ```
-

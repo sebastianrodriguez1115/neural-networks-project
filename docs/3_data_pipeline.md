@@ -24,6 +24,8 @@ uv run python main.py download-amr --output data/processed/amr_labels.csv
 uv run python main.py download-genomes
 # Rutas personalizadas:
 uv run python main.py download-genomes --labels data/processed/amr_labels.csv --output-dir data/raw/fasta
+# Descarga con 8 workers:
+uv run python main.py download-genomes --labels data/processed/amr_labels.csv --output-dir data/raw/fasta --n-jobs 8
 # Muestra de N genomas por especie, estratificada por fenotipo (útil para EDA):
 uv run python main.py download-genomes --sample-per-species 20 --output-dir data/raw/fasta_sample
 ```
@@ -32,6 +34,9 @@ uv run python main.py download-genomes --sample-per-species 20 --output-dir data
 - Filtrar únicamente registros con `laboratory_typing_method == 'Broth dilution'` (estándar de oro para MIC; recomendación del equipo)
 - Conservar solo etiquetas binarias: `Resistant` / `Susceptible`
 - Excluir etiquetas intermedias (`Intermediate`)
+- Eliminar pares contradictorios `(genome_id, antibiotic)` antes de construir el dataset final
+- Eliminar duplicados consistentes por `(genome_id, antibiotic)` conservando el primer registro
+- Filtrar antibióticos con menos de `20` registros después de quitar contradicciones y duplicados
 - Resultado: un archivo con triples `(genome_id, antibiotic, label)`
 
 #### Comandos CLI
@@ -41,6 +46,11 @@ uv run python main.py download-genomes --sample-per-species 20 --output-dir data
 uv run python main.py export-contradictions-cmd
 # Rutas personalizadas:
 uv run python main.py export-contradictions-cmd --labels data/processed/amr_labels.csv --output data/processed/contradictory_labels.csv
+
+# Limpiar labels expandidos antes de descargar FASTA:
+uv run python main.py prepare-labels-for-download \
+    --labels data/expanded/raw/amr_labels_all_taxa.csv \
+    --output data/expanded/processed/labels_for_download.csv
 ```
 
 ### 3. Extracción de k-meros
@@ -59,6 +69,7 @@ uv run python main.py export-contradictions-cmd --labels data/processed/amr_labe
 - Split estratificado: 70% entrenamiento / 15% validación / 15% prueba
 - Split por `genome_id` (no por registro) para evitar data leakage — el mismo genoma no puede aparecer en más de un conjunto
 - Estratificación por etiqueta dentro del split para preservar proporción de clases
+- Para experimentos expandidos, `--locked-splits` conserva la asignación de genomas ya existentes y divide solo los genomas nuevos; `splits.csv` agrega `split_source` (`locked` o `new`)
 
 ### Ejecutar el pipeline completo
 
@@ -80,12 +91,20 @@ uv run python main.py prepare-data \
 uv run python main.py prepare-data --n-jobs -1
 # N procesos específicos:
 uv run python main.py prepare-data --n-jobs 4
+
+# Dataset expandido conservando el split ESKAPE congelado:
+uv run python main.py prepare-data \
+    --labels data/expanded/raw/amr_labels_all_taxa.csv \
+    --fasta-dir data/expanded/fasta \
+    --output-dir data/expanded/processed \
+    --locked-splits data/processed/splits.csv \
+    --n-jobs -1
 ```
 
 El comando genera en `output_dir`:
 - `cleaned_labels.csv` — triples limpios `(genome_id, antibiotic, label)`
 - `antibiotic_index.csv` — mapeo antibiótico → entero
-- `splits.csv` — asignación de cada `genome_id` a train/val/test
+- `splits.csv` — asignación de cada `genome_id` a train/val/test; con `--locked-splits` incluye `split_source`
 - `discarded_genomes.csv` — genomas descartados con motivo (`missing_fasta`, `below_min_length`)
 - `mlp/<genome_id>.npy` — vector 1344-dim por genoma
 - `bigru/<genome_id>.npy` — matriz `[1024, 3]` por genoma

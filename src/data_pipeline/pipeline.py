@@ -9,6 +9,7 @@ import numpy
 import pandas
 
 from .cleaning import GenomeFilter, LabelCleaner
+from .constants import MIN_RECORDS_PER_ANTIBIOTIC
 from .features import (
     KmerExtractor,
     build_antibiotic_index,
@@ -19,6 +20,8 @@ from .features import (
 
 logger = logging.getLogger(__name__)
 
+_VALID_SPLITS = {"train", "val", "test"}
+
 
 def _clean_labels(labels_path: Path, output_dir: Path) -> pandas.DataFrame:
     logger.info("Step 1: Cleaning labels")
@@ -28,6 +31,36 @@ def _clean_labels(labels_path: Path, output_dir: Path) -> pandas.DataFrame:
         cleaned_path, index=False
     )
     logger.info(f"Cleaned labels saved to: {cleaned_path}")
+    return cleaned
+
+
+def prepare_labels_for_download(
+    labels_path: Path,
+    output_path: Path,
+    min_records_per_antibiotic: int = MIN_RECORDS_PER_ANTIBIOTIC,
+) -> pandas.DataFrame:
+    """Limpia etiquetas antes de descargar FASTA y conserva metadata útil.
+
+    Aplica el mismo `LabelCleaner` usado por el pipeline principal. Sirve para
+    reducir descargas masivas a genomas que aún tienen al menos una etiqueta útil
+    después de filtrar método, contradicciones, duplicados y antibióticos raros.
+    """
+    labels_path = Path(labels_path)
+    output_path = Path(output_path)
+    if labels_path.resolve() == output_path.resolve():
+        raise ValueError("output_path debe ser distinto de labels_path")
+
+    logger.info("Preparing labels for FASTA download")
+    cleaned = LabelCleaner(
+        labels_path,
+        min_records_per_antibiotic=min_records_per_antibiotic,
+    ).clean()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cleaned.to_csv(output_path, index=False)
+    logger.info(
+        f"Labels for download saved to: {output_path} "
+        f"({len(cleaned)} records, {cleaned['genome_id'].nunique()} genomes)"
+    )
     return cleaned
 
 
@@ -74,10 +107,13 @@ def _save_antibiotic_index(
 
 
 def _split_genomes(
-    cleaned: pandas.DataFrame, output_dir: Path
+    cleaned: pandas.DataFrame, output_dir: Path, locked_splits_path: Path | None = None
 ) -> tuple[pandas.DataFrame, set[str]]:
     logger.info("Step 3: Train/val/test split")
-    splits = split_genomes(cleaned)
+    if locked_splits_path is None:
+        splits = split_genomes(cleaned)
+    else:
+        splits = _split_with_locked_genomes(cleaned, locked_splits_path)
     splits_path = output_dir / "splits.csv"
     splits.to_csv(splits_path, index=False)
     logger.info(f"Splits saved to: {splits_path}")
@@ -102,6 +138,53 @@ def _split_genomes(
     logger.info(f"Train stats saved to: {stats_path}")
 
     return splits, train_ids
+
+
+def _split_with_locked_genomes(
+    cleaned: pandas.DataFrame, locked_splits_path: Path
+) -> pandas.DataFrame:
+    """Conserva splits congelados y divide solo los genomas nuevos."""
+    locked_splits_path = Path(locked_splits_path)
+    locked = pandas.read_csv(locked_splits_path, dtype={"genome_id": str})
+    missing_columns = {"genome_id", "split"} - set(locked.columns)
+    if missing_columns:
+        raise ValueError(
+            "locked_splits debe contener las columnas: "
+            + ", ".join(sorted(missing_columns))
+        )
+
+    locked = locked[["genome_id", "split"]].copy()
+    invalid_splits = sorted(set(locked["split"]) - _VALID_SPLITS)
+    if invalid_splits:
+        raise ValueError(
+            "locked_splits contiene valores de split inválidos: "
+            + ", ".join(invalid_splits)
+        )
+
+    duplicated = sorted(locked[locked["genome_id"].duplicated()]["genome_id"].unique())
+    if duplicated:
+        raise ValueError(
+            "locked_splits contiene genomas duplicados: " + ", ".join(duplicated[:10])
+        )
+
+    cleaned_genome_ids = set(cleaned["genome_id"].astype(str).unique())
+    locked_current = locked[locked["genome_id"].isin(cleaned_genome_ids)].copy()
+    locked_current["split_source"] = "locked"
+
+    locked_ids = set(locked_current["genome_id"])
+    new_cleaned = cleaned[~cleaned["genome_id"].isin(locked_ids)]
+    if new_cleaned.empty:
+        new_splits = pandas.DataFrame(columns=["genome_id", "split", "split_source"])
+    else:
+        new_splits = split_genomes(new_cleaned)
+        new_splits["split_source"] = "new"
+
+    skipped_locked = len(locked) - len(locked_current)
+    logger.info(
+        f"Locked split policy: locked={len(locked_current)}, "
+        f"new={new_cleaned['genome_id'].nunique()}, skipped_locked={skipped_locked}"
+    )
+    return pandas.concat([locked_current, new_splits], ignore_index=True)
 
 
 def _extract_single_genome(genome_id: str, fasta_dir: Path) -> tuple[str, numpy.ndarray]:
@@ -302,12 +385,15 @@ def run_pipeline(
     fasta_dir: Path,
     output_dir: Path,
     n_jobs: int = 1,
+    locked_splits_path: Path | None = None,
 ) -> None:
     """Ejecuta el pipeline completo de preprocesamiento de datos.
 
     Args:
         n_jobs: Procesos paralelos para extracción de k-meros.
                 1=secuencial (defecto), -1=80% de los CPUs disponibles.
+        locked_splits_path: CSV opcional con columnas genome_id y split para
+                conservar asignaciones de train/val/test existentes.
     """
     labels_path = Path(labels_path)
     fasta_dir = Path(fasta_dir)
@@ -317,7 +403,7 @@ def run_pipeline(
     cleaned = _clean_labels(labels_path, output_dir)
     cleaned = _filter_genomes(cleaned, fasta_dir, output_dir)
     _save_antibiotic_index(cleaned, output_dir)
-    _, train_ids = _split_genomes(cleaned, output_dir)
+    _, train_ids = _split_genomes(cleaned, output_dir, locked_splits_path)
     genome_list = sorted(cleaned["genome_id"].unique())
     mlp_vectors = _extract_kmers(genome_list, fasta_dir, n_jobs=n_jobs)
     _normalize_and_save(mlp_vectors, train_ids, genome_list, output_dir)

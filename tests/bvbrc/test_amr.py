@@ -30,11 +30,15 @@ def _make_mock_amr_response(records: list[dict], content_range: str | None = Non
     return mock_response
 
 
-def _make_fake_amr_record(genome_id: str = "1280.1", phenotype: str = "Resistant") -> dict:
+def _make_fake_amr_record(
+    genome_id: str = "1280.1",
+    phenotype: str = "Resistant",
+    taxon_id: int = 1280,
+) -> dict:
     """Crea un registro AMR mínimo válido para usar en tests."""
     return {
         "genome_id": genome_id,
-        "taxon_id": 1280,
+        "taxon_id": taxon_id,
         "antibiotic": "penicillin",
         "resistant_phenotype": phenotype,
         "laboratory_typing_method": "MIC",
@@ -68,6 +72,27 @@ def test_query_implicitly_excludes_intermediate():
     """Intermediate no debe aparecer como valor permitido en la consulta."""
     query = AMRFetcher._build_query([1280])
     assert "Intermediate" not in query
+
+
+def test_query_without_taxon_filter_for_all_taxa():
+    query = AMRFetcher._build_query(None)
+    assert "taxon_id" not in query
+    assert "eq(evidence,Laboratory)" in query
+
+
+def test_query_rejects_empty_taxon_list():
+    with pytest.raises(ValueError):
+        AMRFetcher._build_query([])
+
+
+def test_query_can_filter_by_typing_method():
+    query = AMRFetcher._build_query([1280], typing_method="Broth dilution")
+    assert "eq(laboratory_typing_method,Broth%20dilution)" in query
+
+
+def test_query_rejects_blank_typing_method():
+    with pytest.raises(ValueError):
+        AMRFetcher._build_query([1280], typing_method="   ")
 
 
 # ── fetch_amr_labels ───────────────────────────────────────────────────────────
@@ -138,6 +163,51 @@ def test_uses_eskape_taxons_by_default():
     called_url = mock_request.call_args[0][0]
     for taxon_id in ESKAPE_TAXON_IDS.values():
         assert str(taxon_id) in called_url
+
+
+def test_all_taxa_omits_eskape_taxon_filter():
+    mock_response = _make_mock_amr_response([])
+
+    with patch(
+        "bvbrc.amr.make_api_request_with_retries", return_value=mock_response
+    ) as mock_request:
+        fetch_amr_labels(all_taxa=True)
+
+    called_url = mock_request.call_args[0][0]
+    assert "in(taxon_id" not in called_url
+
+
+def test_all_taxa_cannot_be_combined_with_explicit_taxon_ids():
+    with pytest.raises(ValueError):
+        fetch_amr_labels(taxon_ids=[1280], all_taxa=True)
+
+
+def test_excludes_taxon_ids_after_download():
+    records = [
+        _make_fake_amr_record("1280.1", taxon_id=1280),
+        _make_fake_amr_record("999.1", taxon_id=999),
+    ]
+    mock_response = _make_mock_amr_response(records)
+
+    with patch("bvbrc.amr.make_api_request_with_retries", return_value=mock_response):
+        result = fetch_amr_labels(all_taxa=True, exclude_taxon_ids=[1280])
+
+    assert len(result) == 1
+    assert result.iloc[0]["genome_id"] == "999.1"
+
+
+def test_typing_method_is_filtered_locally_after_download():
+    records = [
+        {**_make_fake_amr_record("1.1"), "laboratory_typing_method": "Broth dilution"},
+        {**_make_fake_amr_record("1.2"), "laboratory_typing_method": "Biofosun Gram-positive panels broth dilution"},
+    ]
+    mock_response = _make_mock_amr_response(records)
+
+    with patch("bvbrc.amr.make_api_request_with_retries", return_value=mock_response):
+        result = fetch_amr_labels(taxon_ids=[1280], typing_method="Broth dilution")
+
+    assert len(result) == 1
+    assert result.iloc[0]["genome_id"] == "1.1"
 
 
 def test_saves_csv_when_output_path_is_given(tmp_path):

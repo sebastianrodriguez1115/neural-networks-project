@@ -109,6 +109,90 @@
 
 ---
 
+## Experimento 8 — HierSet con dataset AMR expandido
+
+- **Motivación:** probar si agregar AMR no-ESKAPE mejora la generalización manteniendo el test ESKAPE original congelado.
+- **Datos:** `data/expanded/processed`, 282716 registros finales y 37678 genomas válidos. Splits: 9060 genomas `locked` del benchmark ESKAPE original y 28618 genomas `new`.
+- **Modelo:** mismo `AMRHierSet` v1, mismos hiperparámetros que el baseline (`batch=32`, `lr=0.001`, `patience=15`, `pos_weight_scale=2.5`, `weight_decay=1e-3`).
+- **Comandos:**
+  ```bash
+  uv run python main.py prepare-data \
+    --labels data/expanded/raw/amr_labels_all_taxa.csv \
+    --fasta-dir data/expanded/fasta \
+    --output-dir data/expanded/processed \
+    --locked-splits data/processed/splits.csv \
+    --n-jobs -1
+  uv run python main.py prepare-hier \
+    --data-dir data/expanded/processed \
+    --fasta-dir data/expanded/fasta \
+    --n-jobs -1
+  uv run python main.py train-hier-set \
+    --data-dir data/expanded/processed \
+    --output-dir results/hier_set_expanded
+  ```
+- **Entrenamiento:** early stopping en época 70; umbral usado θ=0.7302, calibrado sobre validación expandida.
+
+### Resultados
+
+| Evaluación | n | F1 | Recall | AUC-ROC |
+|---|---:|---:|---:|---:|
+| Test expandido completo | 43506 | 0.8129 | 0.8075 | 0.9355 |
+| Test ESKAPE congelado (`locked`) | 12532 | 0.8874 | 0.9039 | 0.9384 |
+| Test nuevo (`new`) | 30974 | 0.7361 | 0.7130 | 0.9184 |
+| Baseline HierSet v1 sobre ESKAPE | 12528 | 0.8900 | 0.9088 | 0.9368 |
+
+- **Lectura:** el entrenamiento expandido no mejora de forma clara el benchmark ESKAPE congelado. F1 baja −0.0026 y Recall baja −0.0049 respecto al baseline, aunque AUC sube +0.0016.
+- **Riesgo confirmado parcialmente:** el bajo F1/Recall en `new` pese a AUC alto sugiere un problema de umbral/calibración y posible heterogeneidad fuerte entre taxones/antibióticos nuevos. No basta con mirar el test expandido promedio.
+- **Métricas por grupo:** se generaron CSVs por antibiótico y por `taxon_id` para `all`, `locked` y `new` en `results/hier_set_expanded/`. En `new`, los peores taxones con ≥100 muestras incluyen `taxon_id=58712` (F1=0.2667), `1733` (F1=0.4125) y `1773` (F1=0.5157). Varios antibióticos con ≥100 muestras quedan con F1/Recall 0 con el umbral global, incluyendo `capreomycin`, `ofloxacin`, `telithromycin`, `prothionamide` y `vancomycin`.
+- **Decisión provisional:** resultado negativo para la expansión tal como está. Antes de descartarla definitivamente falta medir calibración por subset y revisar si umbrales por grupo corrigen parte de la caída sin sobreajustar.
+
+### Ajuste de `pos_weight_scale`
+
+El EDA expandido mostró un cambio fuerte de prior: el train expandido tiene `pos_weight=1.7890`, mientras ESKAPE original usaba `pos_weight=0.8522`. Mantener `pos_weight_scale=2.5` llevaba el peso efectivo a `4.4725`, demasiado agresivo para un dataset donde `new` es mayoritariamente susceptible. Se entrenaron dos variantes adicionales manteniendo todo lo demás fijo.
+
+| Scale | Subset | F1 | Recall | Precision | AUC-ROC | Umbral |
+|---:|---|---:|---:|---:|---:|---:|
+| 1.0 | all | 0.8273 | 0.8255 | 0.8290 | 0.9421 | 0.5274 |
+| 1.0 | locked | 0.8973 | 0.9261 | 0.8702 | 0.9463 | 0.5274 |
+| 1.0 | new | 0.7539 | 0.7271 | 0.7828 | 0.9260 | 0.5274 |
+| 1.5 | all | 0.8152 | 0.8299 | 0.8009 | 0.9363 | 0.5675 |
+| 1.5 | locked | 0.8883 | 0.9221 | 0.8568 | 0.9377 | 0.5675 |
+| 1.5 | new | 0.7408 | 0.7397 | 0.7419 | 0.9197 | 0.5675 |
+| 2.5 | all | 0.8129 | 0.8075 | 0.8184 | 0.9355 | 0.7302 |
+| 2.5 | locked | 0.8874 | 0.9039 | 0.8716 | 0.9384 | 0.7302 |
+| 2.5 | new | 0.7361 | 0.7130 | 0.7608 | 0.9184 | 0.7302 |
+
+- **Resultado:** `pos_weight_scale=1.0` es la mejor variante expandida hasta ahora. Mejora F1 y AUC en `all`, `locked` y `new` frente a `1.5` y `2.5`.
+- **Comparación contra baseline ESKAPE:** en el test ESKAPE congelado, `scale=1.0` supera al HierSet v1 histórico en F1 (0.8973 vs 0.8900), Recall (0.9261 vs 0.9088) y AUC (0.9463 vs 0.9368). Este es el primer resultado positivo del dataset expandido, aunque debe interpretarse con cautela porque también cambió el conjunto de antibióticos y la calibración.
+- **Efecto en `new`:** mejora respecto a `scale=2.5` (F1 0.7539 vs 0.7361), pero sigue lejos del rendimiento en `locked`, confirmando que la heterogeneidad multi-taxon no queda resuelta solo ajustando `pos_weight_scale`.
+- **Decisión actual:** usar `results/hier_set_expanded_pw1_0/` como mejor checkpoint expandido provisional.
+
+### Control: BiGRU con dataset expandido
+
+- **Motivación:** verificar si el modelo profundo previo se beneficia más que HierSet del dataset expandido.
+- **Comando:**
+  ```bash
+  uv run python main.py train-bigru \
+    --data-dir data/expanded/processed \
+    --output-dir results/bigru_expanded \
+    --batch-size 128 \
+    --pos-weight-scale 2.5 \
+    --patience 15
+  ```
+- **Entrenamiento:** early stopping en época 97; umbral usado θ=0.7186.
+
+| Evaluación | n | F1 | Recall | AUC-ROC |
+|---|---:|---:|---:|---:|
+| Test expandido completo | 43506 | 0.7683 | 0.7830 | 0.9009 |
+| Test ESKAPE congelado (`locked`) | 12532 | 0.8481 | 0.8771 | 0.8888 |
+| Test nuevo (`new`) | 30974 | 0.6878 | 0.6908 | 0.8847 |
+| Baseline BiGRU v2 sobre ESKAPE | 12528 | 0.8566 | 0.9032 | 0.8998 |
+
+- **Lectura:** la expansión empeora BiGRU en el test ESKAPE congelado y también rinde peor que HierSet expandido en todos los cortes. La caída en `new` es más fuerte que la de HierSet (F1 0.6878 vs 0.7361), lo que refuerza que el sesgo pseudo-secuencial de BiGRU no ayuda en este régimen multi-taxon.
+- **Métricas por grupo:** en `new`, los peores taxones con ≥100 muestras incluyen `taxon_id=58712` (F1=0.0000), `1733` (F1=0.4699) y `1773` (F1=0.5220). Antibióticos con F1/Recall casi nulos incluyen `vancomycin`, `capreomycin`, `linezolid`, `ofloxacin` y `tigecycline`.
+
+---
+
 ## Análisis post-hoc — Umbrales por antibiótico
 
 - **Motivación:** explorar si un umbral óptimo **por antibiótico** (en vez del umbral global actual) puede mejorar el F1 de HierSet v1 aprovechando que la distribución R/S varía fuertemente entre antibióticos.

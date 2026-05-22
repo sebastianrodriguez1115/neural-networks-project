@@ -4,10 +4,12 @@ main.py
 Punto de entrada CLI del proyecto de predicción de AMR.
 
 Comandos:
-    download-amr              Descarga etiquetas AMR de BV-BRC para organismos ESKAPE
+    download-amr              Descarga etiquetas AMR de BV-BRC (ESKAPE por defecto, all-taxa opcional)
     download-genomes          Descarga genomas FASTA para los genome_id del CSV de etiquetas
     eda                       Análisis exploratorio del dataset de etiquetas AMR
+    eda-expanded              EDA reproducible del dataset expandido all-taxa
     export-contradictions-cmd Exporta pares con etiquetas contradictorias a CSV
+    prepare-labels-for-download Limpia labels antes de descargar FASTA expandido
     prepare-data              Preprocesa datos: limpia, extrae k-meros, split, normaliza
     prepare-tokens            Extrae secuencias de tokens para el modelo Token BiGRU
     prepare-hier              Extrae histogramas segmentados para el modelo Hierarchical BiGRU
@@ -17,6 +19,7 @@ Comandos:
     train-multi-bigru         Entrena la Multi-Stream BiGRU (arquitectura experta por k)
     train-hier-bigru          Entrena el Hierarchical BiGRU sobre histogramas segmentados
     train-hier-set            Entrena el Hierarchical Set Encoder (sin dependencias secuenciales)
+    evaluate-hier-set-checkpoint Evalúa un checkpoint HierSet sin reentrenar
 
 Uso:
     uv run python main.py --help
@@ -38,15 +41,17 @@ import torch
 import typer
 from torch.utils.data import DataLoader
 
-from bvbrc import download_multiple_genomes_fasta, fetch_amr_labels
+from bvbrc import ESKAPE_TAXON_IDS, download_multiple_genomes_fasta, fetch_amr_labels
 from data_pipeline import (
     run_pipeline,
+    prepare_labels_for_download as run_prepare_labels_for_download,
     extract_and_save_tokens,
     extract_and_save_hier,
     extract_and_save_hier_multi,
 )
 from data_pipeline.constants import (
     RANDOM_SEED,
+    MIN_RECORDS_PER_ANTIBIOTIC,
     TOKEN_KMER_K,
     TOKEN_MAX_LEN,
     HIER_KMER_K,
@@ -66,8 +71,15 @@ from models.hier_set.dataset import HierSetDataset
 from models.hier_set.model import AMRHierSet
 from models.hier_set_v2.dataset import HierSetV2Dataset
 from models.hier_set_v2.model import AMRHierSetV2
-from eda import export_contradictions, run_eda
-from train import detect_device, set_seed, train as run_training
+from eda import export_contradictions, run_eda, run_expanded_eda
+from train import (
+    collect_predictions,
+    compute_metrics,
+    detect_device,
+    find_optimal_threshold,
+    set_seed,
+    train as run_training,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -76,6 +88,75 @@ app = typer.Typer(
     help="Herramientas CLI para el proyecto de predicción de resistencia antimicrobiana.",
     no_args_is_help=True,
 )
+
+
+def _resolve_threshold(checkpoint: Path, threshold: float | None) -> float:
+    """Obtiene el umbral explícito o el guardado junto al checkpoint."""
+    if threshold is not None:
+        return threshold
+    metrics_path = checkpoint.parent / "metrics.json"
+    if metrics_path.exists():
+        metrics = json.loads(metrics_path.read_text())
+        if "threshold_used" in metrics:
+            return float(metrics["threshold_used"])
+    return 0.5
+
+
+def _compute_metrics_safe(
+    targets,
+    probabilities,
+    threshold: float,
+) -> dict:
+    """Calcula métricas y tolera grupos con una sola clase para AUC."""
+    try:
+        return compute_metrics(targets, probabilities, loss=float("nan"), threshold=threshold)
+    except ValueError:
+        predictions = (probabilities >= threshold).astype(int)
+        tp = int(((predictions == 1) & (targets == 1)).sum())
+        tn = int(((predictions == 0) & (targets == 0)).sum())
+        fp = int(((predictions == 1) & (targets == 0)).sum())
+        fn = int(((predictions == 0) & (targets == 1)).sum())
+        precision = tp / (tp + fp) if tp + fp > 0 else 0.0
+        recall = tp / (tp + fn) if tp + fn > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
+        return {
+            "loss": float("nan"),
+            "accuracy": (tp + tn) / len(targets) if len(targets) > 0 else 0.0,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "auc_roc": float("nan"),
+        }
+
+
+def _save_group_metrics(
+    predictions: pandas.DataFrame,
+    group_column: str,
+    threshold: float,
+    output_path: Path,
+) -> None:
+    """Guarda métricas por grupo para análisis de heterogeneidad."""
+    rows = []
+    for group_value, group in predictions.groupby(group_column, dropna=True):
+        targets = group["target"].to_numpy()
+        probabilities = group["probability"].to_numpy()
+        metrics = _compute_metrics_safe(targets, probabilities, threshold)
+        metrics.pop("loss", None)
+        metrics.update(
+            {
+                group_column: group_value,
+                "n_samples": len(group),
+                "n_resistant": int(targets.sum()),
+                "n_susceptible": int(len(targets) - targets.sum()),
+            }
+        )
+        rows.append(metrics)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    pandas.DataFrame(rows).sort_values("n_samples", ascending=False).to_csv(
+        output_path,
+        index=False,
+    )
 
 
 def _sample_genome_ids(amr_labels: pandas.DataFrame, n_per_species: int) -> list[str]:
@@ -99,21 +180,52 @@ def _sample_genome_ids(amr_labels: pandas.DataFrame, n_per_species: int) -> list
     return [str(gid) for gid in sample_ids]
 
 
-@app.command(help="Descarga etiquetas AMR (Resistant/Susceptible) de BV-BRC para todos los organismos ESKAPE y las guarda como CSV.")
+@app.command(help="Descarga etiquetas AMR (Resistant/Susceptible) de BV-BRC y las guarda como CSV.")
 def download_amr(
     output: Path = typer.Option(
         Path("data/processed/amr_labels.csv"),
         help="Ruta donde guardar el CSV de etiquetas AMR.",
     ),
+    all_taxa: bool = typer.Option(
+        False,
+        "--all-taxa",
+        help="Descarga etiquetas AMR de todos los taxones, sin limitarse a ESKAPE.",
+    ),
+    exclude_eskape: bool = typer.Option(
+        False,
+        "--exclude-eskape",
+        help="Excluye taxones ESKAPE del resultado. Requiere --all-taxa.",
+    ),
+    typing_method: str | None = typer.Option(
+        None,
+        "--typing-method",
+        help="Filtra por método de laboratorio, por ejemplo 'Broth dilution'.",
+    ),
 ):
     """
-    Descarga etiquetas AMR de BV-BRC para todos los organismos ESKAPE.
+    Descarga etiquetas AMR de BV-BRC.
 
-    Filtra por evidencia de laboratorio y fenotipos binarios (Resistant/Susceptible).
+    Por defecto usa el alcance ESKAPE histórico del proyecto. Con --all-taxa
+    descarga todos los taxones con etiquetas AMR válidas.
+    Filtra por evidencia de laboratorio y fenotipos binarios Resistant/Susceptible.
     Guarda el resultado como CSV en la ruta indicada.
     """
-    typer.echo(f"Descargando etiquetas AMR → {output}")
-    fetch_amr_labels(output_path=output)
+    if exclude_eskape and not all_taxa:
+        typer.echo("Error: --exclude-eskape requiere --all-taxa.", err=True)
+        raise typer.Exit(code=1)
+
+    scope = "todos los taxones" if all_taxa else "organismos ESKAPE"
+    if exclude_eskape:
+        scope = "taxones no-ESKAPE"
+
+    typer.echo(f"Descargando etiquetas AMR ({scope}) → {output}")
+    exclude_taxon_ids = list(ESKAPE_TAXON_IDS.values()) if exclude_eskape else None
+    fetch_amr_labels(
+        output_path=output,
+        all_taxa=all_taxa,
+        exclude_taxon_ids=exclude_taxon_ids,
+        typing_method=typing_method,
+    )
     typer.echo(f"Listo. Etiquetas guardadas en: {output}")
 
 
@@ -130,6 +242,10 @@ def download_genomes(
     sample_per_species: int = typer.Option(
         None,
         help="Si se indica, descarga como máximo N genomas por especie, estratificados por fenotipo (mitad Resistant, mitad Susceptible). Si no se indica, descarga todos.",
+    ),
+    n_jobs: int = typer.Option(
+        1,
+        help="Número de workers para descargar FASTA. Usa -1 para el 80% de los CPUs.",
     ),
 ):
     """
@@ -158,6 +274,7 @@ def download_genomes(
     results = download_multiple_genomes_fasta(
         genome_ids=genome_ids,
         output_directory=output_dir,
+        n_jobs=n_jobs,
     )
 
     typer.echo(f"Descarga finalizada. Exitosos: {len(results)}/{len(genome_ids)}")
@@ -192,6 +309,51 @@ def eda(
     run_eda(labels_path=labels, top_n=top_n_antibiotics, genomes_dir=genomes_dir)
 
 
+@app.command(help="EDA reproducible del dataset AMR expandido all-taxa.")
+def eda_expanded(
+    raw_labels: Path = typer.Option(
+        Path("data/expanded/raw/amr_labels_all_taxa.csv"),
+        help="CSV raw combinado all-taxa.",
+    ),
+    processed_dir: Path = typer.Option(
+        Path("data/expanded/processed"),
+        help="Directorio con labels_for_download.csv, cleaned_labels.csv y splits.csv.",
+    ),
+    non_eskape_labels: Path | None = typer.Option(
+        Path("data/expanded/raw/amr_labels_non_eskape.csv"),
+        help="CSV raw no-ESKAPE. Si no existe, se omite.",
+    ),
+    top_n_taxa: int = typer.Option(
+        10,
+        help="Número de taxones a mostrar en el ranking.",
+    ),
+    top_n_antibiotics: int = typer.Option(
+        10,
+        help="Número de antibióticos a mostrar en el ranking.",
+    ),
+):
+    """Ejecuta el EDA del dataset expandido usando artefactos procesados."""
+    if not raw_labels.exists():
+        typer.echo(f"Error: no se encontró el CSV raw: {raw_labels}", err=True)
+        raise typer.Exit(code=1)
+    if not processed_dir.is_dir():
+        typer.echo(f"Error: no se encontró el directorio procesado: {processed_dir}", err=True)
+        raise typer.Exit(code=1)
+    for filename in ["labels_for_download.csv", "cleaned_labels.csv", "splits.csv"]:
+        path = processed_dir / filename
+        if not path.exists():
+            typer.echo(f"Error: falta {path}", err=True)
+            raise typer.Exit(code=1)
+
+    run_expanded_eda(
+        raw_labels_path=raw_labels,
+        processed_dir=processed_dir,
+        non_eskape_labels_path=non_eskape_labels,
+        top_n_taxa=top_n_taxa,
+        top_n_antibiotics=top_n_antibiotics,
+    )
+
+
 @app.command(help="Exporta los pares (genome_id, antibiotic) con etiquetas contradictorias (Resistant y Susceptible en registros distintos) a un CSV para inspección.")
 def export_contradictions_cmd(
     labels: Path = typer.Option(
@@ -218,6 +380,47 @@ def export_contradictions_cmd(
     typer.echo(f"Reporte guardado en: {output}")
 
 
+@app.command(help="Limpia etiquetas AMR antes de descargar FASTA para el dataset expandido.")
+def prepare_labels_for_download(
+    labels: Path = typer.Option(
+        Path("data/expanded/raw/amr_labels_all_taxa.csv"),
+        help="Ruta al CSV crudo de etiquetas AMR expandidas.",
+    ),
+    output: Path = typer.Option(
+        Path("data/expanded/processed/labels_for_download.csv"),
+        help="Ruta donde guardar las etiquetas limpias para descargar FASTA.",
+    ),
+    min_records_per_antibiotic: int = typer.Option(
+        MIN_RECORDS_PER_ANTIBIOTIC,
+        "--min-records-per-antibiotic",
+        help="Mínimo de registros útiles finales por antibiótico.",
+    ),
+):
+    """
+    Limpia etiquetas antes de la descarga masiva de FASTA.
+
+    Reutiliza LabelCleaner: conserva Broth dilution, elimina contradicciones,
+    deduplica pares genome_id-antibiotic y filtra antibióticos con baja frecuencia.
+    """
+    if not labels.exists():
+        typer.echo(f"Error: no se encontró el archivo de etiquetas: {labels}", err=True)
+        raise typer.Exit(code=1)
+    if labels.resolve() == output.resolve():
+        typer.echo("Error: --output debe ser distinto de --labels.", err=True)
+        raise typer.Exit(code=1)
+
+    cleaned = run_prepare_labels_for_download(
+        labels_path=labels,
+        output_path=output,
+        min_records_per_antibiotic=min_records_per_antibiotic,
+    )
+    typer.echo(f"Etiquetas limpias guardadas en: {output}")
+    typer.echo(f"  Registros:    {len(cleaned):,}")
+    typer.echo(f"  Genomas:      {cleaned['genome_id'].nunique():,}")
+    typer.echo(f"  Taxones:      {cleaned['taxon_id'].nunique():,}")
+    typer.echo(f"  Antibióticos: {cleaned['antibiotic'].nunique():,}")
+
+
 @app.command(help="Pre-procesa los datos: limpia etiquetas, extrae k-meros, divide en train/val/test y normaliza features.")
 def prepare_data(
     labels: Path = typer.Option(
@@ -237,6 +440,11 @@ def prepare_data(
         help="Número de procesos paralelos para extracción de k-meros. "
              "Usa -1 para el 80% de los CPUs disponibles.",
     ),
+    locked_splits: Path | None = typer.Option(
+        None,
+        "--locked-splits",
+        help="CSV con columnas genome_id y split para conservar particiones existentes.",
+    ),
 ):
     """
     Ejecuta el pipeline completo de preprocesamiento:
@@ -255,8 +463,17 @@ def prepare_data(
     if not fasta_dir.is_dir():
         typer.echo(f"Error: no se encontró el directorio de genomas: {fasta_dir}", err=True)
         raise typer.Exit(code=1)
+    if locked_splits is not None and not locked_splits.exists():
+        typer.echo(f"Error: no se encontró el archivo de splits congelados: {locked_splits}", err=True)
+        raise typer.Exit(code=1)
 
-    run_pipeline(labels_path=labels, fasta_dir=fasta_dir, output_dir=output_dir, n_jobs=n_jobs)
+    run_pipeline(
+        labels_path=labels,
+        fasta_dir=fasta_dir,
+        output_dir=output_dir,
+        n_jobs=n_jobs,
+        locked_splits_path=locked_splits,
+    )
     typer.echo("Pipeline completado.")
 
 
@@ -993,6 +1210,156 @@ def train_hier_set(
     typer.echo(f"  AUC-ROC: {test_metrics['auc_roc']:.4f}")
     typer.echo(f"  Umbral:  {test_metrics['threshold_used']:.4f}")
     typer.echo(f"\nGuardado en: {output_dir}")
+
+
+@app.command(help="Evalúa un checkpoint HierSet sobre un split completo o un subset locked/new.")
+def evaluate_hier_set_checkpoint(
+    checkpoint: Path = typer.Option(
+        ...,
+        help="Ruta al checkpoint best_model.pt de HierSet.",
+    ),
+    data_dir: Path = typer.Option(
+        Path("data/expanded/processed"),
+        help="Directorio con splits.csv, cleaned_labels.csv, antibiotic_index.csv y hier_bigru/.",
+    ),
+    split: str = typer.Option(
+        "test",
+        help="Split a evaluar: train, val o test.",
+    ),
+    subset: str | None = typer.Option(
+        None,
+        "--subset",
+        help="Valor de split_source a evaluar, por ejemplo locked o new. Si se omite, usa todo el split.",
+    ),
+    threshold: float | None = typer.Option(
+        None,
+        "--threshold",
+        help="Umbral de decisión. Si se omite, usa threshold_used de metrics.json junto al checkpoint o 0.5.",
+    ),
+    batch_size: int = typer.Option(32, help="Tamaño del mini-batch para inferencia."),
+    output: Path | None = typer.Option(
+        None,
+        help="Ruta donde guardar métricas JSON. Por defecto se guarda junto al checkpoint.",
+    ),
+    per_antibiotic: bool = typer.Option(
+        False,
+        "--per-antibiotic",
+        help="Guarda métricas por antibiótico en CSV.",
+    ),
+    per_taxon: bool = typer.Option(
+        False,
+        "--per-taxon",
+        help="Guarda métricas por taxon_id en CSV. Requiere metadata con taxon_id.",
+    ),
+    metadata_labels: Path | None = typer.Option(
+        None,
+        "--metadata-labels",
+        help="CSV con genome_id, antibiotic y taxon_id. Por defecto usa labels_for_download.csv si existe en data_dir.",
+    ),
+):
+    """Evalúa un checkpoint HierSet sin entrenar ni recalibrar sobre test."""
+    valid_splits = {"train", "val", "test"}
+    if split not in valid_splits:
+        typer.echo(f"Error: --split debe ser uno de {sorted(valid_splits)}.", err=True)
+        raise typer.Exit(code=1)
+    if not checkpoint.exists():
+        typer.echo(f"Error: no se encontró el checkpoint: {checkpoint}", err=True)
+        raise typer.Exit(code=1)
+    if not data_dir.is_dir():
+        typer.echo(f"Error: no se encontró el directorio de datos: {data_dir}", err=True)
+        raise typer.Exit(code=1)
+
+    threshold_used = _resolve_threshold(checkpoint, threshold)
+    if threshold_used < 0.0 or threshold_used > 1.0:
+        typer.echo("Error: el umbral debe estar en [0, 1].", err=True)
+        raise typer.Exit(code=1)
+
+    set_seed(RANDOM_SEED)
+    device = detect_device()
+    typer.echo(f"Dispositivo: {device}")
+    typer.echo(
+        f"Evaluando HierSet: split={split}, subset={subset or 'all'}, threshold={threshold_used:.4f}"
+    )
+
+    dataset = HierSetDataset(data_dir, split=split, split_source=subset)
+    loader = DataLoader(dataset, batch_size=batch_size)
+    typer.echo(f"Muestras: {len(dataset)}")
+
+    model = AMRHierSet.from_antibiotic_index(str(data_dir / "antibiotic_index.csv"))
+    model.load_state_dict(torch.load(checkpoint, map_location=device, weights_only=True))
+    model.to(device)
+
+    params_path = checkpoint.parent / "params.json"
+    pos_weight_scale = 2.5
+    if params_path.exists():
+        params = json.loads(params_path.read_text())
+        pos_weight_scale = float(params.get("pos_weight_scale", pos_weight_scale))
+    base_pos_weight = HierSetDataset.load_pos_weight(data_dir)
+    criterion = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor([base_pos_weight * pos_weight_scale], device=device),
+    )
+
+    probabilities, targets, loss = collect_predictions(model, loader, criterion, device)
+    metrics = compute_metrics(targets, probabilities, loss, threshold=threshold_used)
+    metrics["optimal_threshold"] = find_optimal_threshold(targets, probabilities)
+    metrics["threshold_used"] = threshold_used
+    metrics["split"] = split
+    metrics["subset"] = subset or "all"
+    metrics["n_samples"] = len(dataset)
+
+    predictions = dataset.records
+    predictions["target"] = targets
+    predictions["probability"] = probabilities
+    predictions["prediction"] = (probabilities >= threshold_used).astype(int)
+
+    if output is None:
+        output = checkpoint.parent / f"metrics_{split}_{subset or 'all'}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(metrics, indent=2))
+
+    if per_antibiotic:
+        antibiotic_output = output.with_name(output.stem + "_by_antibiotic.csv")
+        _save_group_metrics(predictions, "antibiotic", threshold_used, antibiotic_output)
+        typer.echo(f"Métricas por antibiótico: {antibiotic_output}")
+
+    if per_taxon:
+        if metadata_labels is None:
+            metadata_labels = data_dir / "labels_for_download.csv"
+        if not metadata_labels.exists():
+            typer.echo(
+                f"Error: no se encontró metadata para taxon_id: {metadata_labels}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        metadata = pandas.read_csv(metadata_labels, dtype={"genome_id": str})
+        required = {"genome_id", "antibiotic", "taxon_id"}
+        missing = required - set(metadata.columns)
+        if missing:
+            typer.echo(
+                "Error: metadata_labels debe contener columnas: " + ", ".join(sorted(missing)),
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        metadata = metadata[["genome_id", "antibiotic", "taxon_id"]].drop_duplicates(
+            subset=["genome_id", "antibiotic"],
+        )
+        predictions = predictions.merge(
+            metadata,
+            on=["genome_id", "antibiotic"],
+            how="left",
+        )
+        missing_taxon = int(predictions["taxon_id"].isna().sum())
+        if missing_taxon:
+            typer.echo(f"Advertencia: {missing_taxon} muestras sin taxon_id.")
+        taxon_output = output.with_name(output.stem + "_by_taxon.csv")
+        _save_group_metrics(predictions, "taxon_id", threshold_used, taxon_output)
+        typer.echo(f"Métricas por taxon_id: {taxon_output}")
+
+    typer.echo(f"F1:      {metrics['f1']:.4f}")
+    typer.echo(f"Recall:  {metrics['recall']:.4f}")
+    typer.echo(f"AUC-ROC: {metrics['auc_roc']:.4f}")
+    typer.echo(f"Umbral:  {metrics['threshold_used']:.4f}")
+    typer.echo(f"Guardado en: {output}")
 
 
 @app.command(help="Entrena el HierSet v2 (multi-head attention + histogramas multi-escala).")

@@ -8,7 +8,9 @@ Referencia de la API: docs/reference/bvbrc_api.md
 """
 
 import logging
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from ._http import (
@@ -75,9 +77,12 @@ class GenomeFetcher:
 class GenomeBatchFetcher:
     """Descarga FASTA de una lista de genomas, tolerando fallos individuales."""
 
-    def __init__(self, genome_ids: list[str], output_directory: Path):
+    def __init__(self, genome_ids: list[str], output_directory: Path, n_jobs: int = 1):
+        if n_jobs == 0 or n_jobs < -1:
+            raise ValueError(f"n_jobs debe ser >= 1 o -1, recibido: {n_jobs}")
         self._genome_ids = genome_ids
         self._output_directory = Path(output_directory)
+        self._n_jobs = n_jobs
         self._successful: dict[str, Path] = {}
         self._failed: list[str] = []
 
@@ -94,19 +99,43 @@ class GenomeBatchFetcher:
         total = len(self._genome_ids)
         logger.info(f"Iniciando descarga de {total} genomas FASTA...")
 
-        for index, genome_id in enumerate(self._genome_ids):
-            logger.info(f"[{index + 1}/{total}] Descargando genoma {genome_id}")
-            self._fetch_one(genome_id)
-            time.sleep(SLEEP_BETWEEN_REQUESTS)
+        if self._n_jobs == 1:
+            self._fetch_sequentially(total)
+        else:
+            self._fetch_in_parallel(total)
 
         self._log_summary()
         return self._successful
 
-    def _fetch_one(self, genome_id: str) -> None:
+    def _fetch_sequentially(self, total: int) -> None:
+        for index, genome_id in enumerate(self._genome_ids):
+            logger.info(f"[{index + 1}/{total}] Descargando genoma {genome_id}")
+            self._record_result(self._fetch_one(genome_id))
+
+    def _fetch_in_parallel(self, total: int) -> None:
+        workers = max(1, int(os.cpu_count() * 0.8)) if self._n_jobs == -1 else self._n_jobs
+        logger.info(f"Descarga paralela: {total} genomas, {workers} workers")
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(self._fetch_one, genome_id) for genome_id in self._genome_ids]
+            for index, future in enumerate(as_completed(futures)):
+                genome_id, path, exception = future.result()
+                self._record_result((genome_id, path, exception))
+                logger.info(f"[{index + 1}/{total}] Descarga procesada: {genome_id}")
+
+    def _fetch_one(self, genome_id: str) -> tuple[str, Path | None, Exception | None]:
         try:
             path = GenomeFetcher(genome_id, self._output_directory).fetch()
-            self._successful[genome_id] = path
+            return genome_id, path, None
         except (RuntimeError, OSError) as exception:
+            return genome_id, None, exception
+        finally:
+            time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+    def _record_result(self, result: tuple[str, Path | None, Exception | None]) -> None:
+        genome_id, path, exception = result
+        if exception is None and path is not None:
+            self._successful[genome_id] = path
+        else:
             logger.error(f"Error descargando genoma {genome_id}: {exception}")
             self._failed.append(genome_id)
 
@@ -132,7 +161,7 @@ def download_genome_fasta(genome_id: str, output_directory: Path) -> Path:
 def download_multiple_genomes_fasta(
     genome_ids: list[str],
     output_directory: Path,
+    n_jobs: int = 1,
 ) -> dict[str, Path]:
     """Descarga FASTA de una lista de genomas. Ver GenomeBatchFetcher.fetch para detalles."""
-    return GenomeBatchFetcher(genome_ids, output_directory).fetch()
-
+    return GenomeBatchFetcher(genome_ids, output_directory, n_jobs=n_jobs).fetch()

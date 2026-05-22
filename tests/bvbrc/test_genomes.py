@@ -103,6 +103,22 @@ def test_downloads_multiple_genomes_successfully(tmp_path):
     assert len(result) == 2
 
 
+def test_downloads_multiple_genomes_in_parallel(tmp_path):
+    mock_response = _make_mock_fasta_response()
+
+    with patch("bvbrc.genomes.make_api_request_with_retries", return_value=mock_response):
+        result = download_multiple_genomes_fasta(["1280.1", "1280.2"], tmp_path, n_jobs=2)
+
+    assert "1280.1" in result
+    assert "1280.2" in result
+    assert len(result) == 2
+
+
+def test_download_multiple_genomes_rejects_invalid_n_jobs(tmp_path):
+    with pytest.raises(ValueError):
+        download_multiple_genomes_fasta(["1280.1"], tmp_path, n_jobs=0)
+
+
 def test_continues_downloading_if_one_genome_fails(tmp_path):
     """Un fallo individual no debe detener el resto de las descargas."""
     good_response = _make_mock_fasta_response()

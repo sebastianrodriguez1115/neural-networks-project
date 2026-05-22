@@ -10,3 +10,4 @@
 **/__pycache__/
 **/discarded_genomes.csv
 **/train_stats.json
+data/expanded/

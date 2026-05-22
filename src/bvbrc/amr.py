@@ -2,7 +2,7 @@
 amr.py
 
 Cliente para el endpoint genome_amr de BV-BRC.
-Descarga etiquetas de resistencia antimicrobiana (AMR) para organismos ESKAPE.
+Descarga etiquetas de resistencia antimicrobiana (AMR) desde BV-BRC.
 
 Referencia de la API: docs/reference/bvbrc_api.md
 """
@@ -10,6 +10,7 @@ Referencia de la API: docs/reference/bvbrc_api.md
 import logging
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas
 
@@ -57,8 +58,8 @@ class AMRFetcher:
     _HEADERS = {"Accept": "application/json"}
     _FIELDS = ",".join(AMR_FIELDS_TO_SELECT)
 
-    def __init__(self, taxon_ids: list[int]):
-        self._query = self._build_query(taxon_ids)
+    def __init__(self, taxon_ids: list[int] | None, typing_method: str | None = None):
+        self._query = self._build_query(taxon_ids, typing_method=typing_method)
         self._records: list[dict] = []
         self._offset = 0
         self._total: int | None = None
@@ -121,31 +122,71 @@ class AMRFetcher:
         )
 
     @staticmethod
-    def _build_query(taxon_ids: list[int]) -> str:
+    def _build_query(
+        taxon_ids: list[int] | None,
+        typing_method: str | None = None,
+    ) -> str:
         """
         Construye la consulta en Resource Query Language (RQL) para el endpoint genome_amr.
 
         Filtros aplicados:
-            - taxon_id pertenece a la lista dada
+            - taxon_id pertenece a la lista dada, si se provee
             - evidence = Laboratory (excluye predicciones computacionales)
             - resistant_phenotype es Resistant o Susceptible (excluye Intermediate
               y Non-susceptible, que son etiquetas ambiguas para clasificación binaria)
+            - laboratory_typing_method, si se provee
         """
-        taxon_ids_joined = ",".join(str(taxon_id) for taxon_id in taxon_ids)
-        return (
-            f"and("
-                f"in(taxon_id,({taxon_ids_joined})),"
-                f"eq(evidence,Laboratory),"
-                f"in(resistant_phenotype,(Resistant,Susceptible))"
-            f")"
-        )
+        filters = []
+        if taxon_ids is not None:
+            if not taxon_ids:
+                raise ValueError("taxon_ids no puede ser una lista vacía")
+            taxon_ids_joined = ",".join(str(taxon_id) for taxon_id in taxon_ids)
+            filters.append(f"in(taxon_id,({taxon_ids_joined}))")
+
+        filters.extend([
+            "eq(evidence,Laboratory)",
+            "in(resistant_phenotype,(Resistant,Susceptible))",
+        ])
+
+        if typing_method is not None:
+            typing_method = typing_method.strip()
+            if not typing_method:
+                raise ValueError("typing_method no puede estar vacío")
+            filters.append(f"eq(laboratory_typing_method,{quote(typing_method, safe='')})")
+
+        return f"and({','.join(filters)})"
 
 
 def fetch_amr_labels(
     taxon_ids: list[int] | None = None,
     output_path: Path | None = None,
+    *,
+    all_taxa: bool = False,
+    exclude_taxon_ids: list[int] | None = None,
+    typing_method: str | None = None,
 ) -> pandas.DataFrame:
     """Descarga etiquetas AMR de BV-BRC. Ver AMRFetcher.fetch para detalles."""
-    if taxon_ids is None:
+    if all_taxa and taxon_ids is not None:
+        raise ValueError("No se puede combinar all_taxa=True con taxon_ids explícitos")
+
+    if not all_taxa and taxon_ids is None:
         taxon_ids = list(ESKAPE_TAXON_IDS.values())
-    return AMRFetcher(taxon_ids).fetch(output_path=output_path)
+
+    dataframe = AMRFetcher(taxon_ids, typing_method=typing_method).fetch()
+
+    if typing_method is not None:
+        typing_method = typing_method.strip()
+        dataframe = dataframe[
+            dataframe["laboratory_typing_method"] == typing_method
+        ].reset_index(drop=True)
+
+    if exclude_taxon_ids:
+        dataframe = dataframe[~dataframe["taxon_id"].isin(exclude_taxon_ids)].reset_index(drop=True)
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        dataframe.to_csv(output_path, index=False)
+        logger.info(f"Etiquetas AMR guardadas en: {output_path}")
+
+    return dataframe

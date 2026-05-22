@@ -155,6 +155,23 @@ class TestDatasets:
         assert ab_idx.dtype == torch.long
         assert label.dtype == torch.float32
 
+    def test_dataset_filters_by_split_source(self, data_dir):
+        """Permite evaluar solo genomas locked/new dentro de un split."""
+        splits_path = data_dir / "splits.csv"
+        splits = pandas.read_csv(splits_path, dtype={"genome_id": str})
+        splits["split_source"] = "new"
+        splits.loc[splits["genome_id"].isin(["0", "1"]), "split_source"] = "locked"
+        splits.to_csv(splits_path, index=False)
+
+        ds = MLPDataset(data_dir, "train", split_source="locked")
+
+        assert len(ds) == 2 * len(_ANTIBIOTICS)
+
+    def test_dataset_rejects_split_source_without_column(self, data_dir):
+        """El filtro split_source exige splits generados con --locked-splits."""
+        with pytest.raises(ValueError, match="split_source"):
+            MLPDataset(data_dir, "train", split_source="locked")
+
     def test_hier_bigru_dataset_rejects_wrong_shape(self, data_dir):
         """Verifica que se lanza ValueError con shape incorrecto."""
         import numpy as np
@@ -173,6 +190,15 @@ class TestDatasets:
         for i in range(len(ds)):
             _, _, label = ds[i]
             assert label.item() in (0.0, 1.0)
+
+    def test_records_match_dataset_order(self, data_dir):
+        """La metadata de records conserva el orden de las muestras."""
+        ds = MLPDataset(data_dir, "train")
+        records = ds.records
+
+        assert list(records.columns) == ["genome_id", "antibiotic"]
+        assert len(records) == len(ds)
+        assert records.iloc[0]["antibiotic"] in _ANTIBIOTICS
 
     def test_splits_are_disjoint(self, data_dir):
         """Los vectores de train y val no se solapan."""

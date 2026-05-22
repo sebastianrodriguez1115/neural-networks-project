@@ -204,6 +204,36 @@ Plan detallado en `plan_hier_set_v2.md`.
 
 ---
 
+## Fase 8 - Dataset AMR expandido
+
+Plan detallado en `docs/PLAN_DATASET_EXPANDIDO.md`.
+
+### 8.1 Planificación
+- [x] Definir estrategia para expandir el dataset más allá de ESKAPE sin sobrescribir el baseline actual
+- [x] Congelar `HierSet` v1 como referencia principal y definir evaluación contra test ESKAPE bloqueado
+
+### 8.2 Implementación pendiente
+- [x] Soportar descarga AMR all-taxa o non-ESKAPE en `download-amr`
+- [x] Descargar labels AMR no-ESKAPE con `Broth dilution` en `data/expanded/raw/amr_labels_non_eskape.csv` (220898 registros, 28624 genomas, 576 taxones)
+- [x] Crear `data/expanded/raw/amr_labels_all_taxa.csv` combinando ESKAPE original + no-ESKAPE (383068 registros, 44905 genomas, 581 taxones)
+- [x] Ajustar `LabelCleaner` para aplicar el filtro de frecuencia mínima de antibióticos después de contradicciones y deduplicación
+- [x] Agregar limpieza previa de labels antes de descargar FASTA: `labels_for_download.csv` (282997 registros, 37892 genomas, 581 taxones, 100 antibióticos)
+- [x] Descargar FASTA para todos los genomas de `labels_for_download.csv` en `data/expanded/fasta` (37892/37892 disponibles; 16528 symlinks a FASTA existentes, 28667 archivos reales)
+- [x] Implementar splits bloqueados con `locked_splits` en `prepare-data` y marcar `split_source` (`locked`/`new`)
+- [x] Ejecutar `prepare-data` expandido con `--locked-splits data/processed/splits.csv` (282716 registros, 37678 genomas válidos; 9060 locked, 28618 nuevos; 214 genomas descartados por longitud)
+- [x] Ejecutar `prepare-hier` expandido para `HierSet` (37678 matrices en `data/expanded/processed/hier_bigru/`, shape `(256, 256)`)
+- [x] Entrenar `HierSet` sobre el dataset expandido (early stopping época 70; test expandido F1=0.8129, Recall=0.8075, AUC=0.9355)
+- [x] Evaluar contra test ESKAPE congelado con `evaluate-hier-set-checkpoint --subset locked` (F1=0.8874, Recall=0.9039, AUC=0.9384)
+- [x] Evaluar métricas por taxon y antibiótico (`metrics_test_*_by_antibiotic.csv`, `metrics_test_*_by_taxon.csv` en `results/hier_set_expanded/`)
+- [x] Entrenar y evaluar `BiGRU` sobre el dataset expandido con `patience=15` (test completo F1=0.7683, locked F1=0.8481, new F1=0.6878)
+- [x] Documentar EDA del dataset expandido en `docs/2_eda.md` y hacerlo reproducible con `eda-expanded`
+- [x] Ajustar `pos_weight_scale` en HierSet expandido: `1.0` supera a `1.5` y `2.5` (locked F1=0.8973, new F1=0.7539, AUC locked=0.9463)
+- [x] Crear borrador Markdown del informe final en `docs/term_report/FINAL_REPORT_DRAFT.md`
+- [x] Convertir el borrador del informe final a español
+- [x] Pasar el borrador a formato IEEE LaTeX en `docs/term_report/main.tex` y compilar `main.pdf`
+
+---
+
 ## Decisiones
 
 ### Resueltas

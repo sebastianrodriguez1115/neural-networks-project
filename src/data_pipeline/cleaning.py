@@ -27,9 +27,9 @@ class LabelCleaner:
     def clean(self) -> pandas.DataFrame:
         self._load()
         self._filter_by_typing_method()
-        self._filter_by_antibiotic_frequency()
         self._remove_contradictory_pairs()
         self._deduplicate()
+        self._filter_by_antibiotic_frequency()
         logger.info(
             f"Cleaning complete: {self._n_initial} → {len(self._dataframe)} records "
             f"({self._n_typing_method_removed} non-broth dilution removed, "
@@ -145,4 +145,3 @@ class GenomeFilter:
     @staticmethod
     def _compute_length(fasta_path: Path) -> int:
         return sum(len(record.seq) for record in SeqIO.parse(fasta_path, "fasta"))
-

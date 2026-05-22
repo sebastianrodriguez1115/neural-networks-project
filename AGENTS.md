@@ -33,6 +33,7 @@ Proyecto académico: predecir resistencia antimicrobiana (AMR) en bacterias a pa
 - `docs/4_models.md` — arquitecturas y decisiones de diseño
 - `docs/5_experiments.md` — experimentos y criterio de éxito
 - `docs/PLAN_MLP.md` — plan de implementación detallado para MLP y entrenamiento
+- `docs/PLAN_DATASET_EXPANDIDO.md` - plan para expandir el dataset AMR más allá de ESKAPE manteniendo el HierSet actual como baseline congelado
 
 ## Documentos a mantener al hacer cambios
 Estos documentos pueden quedar desactualizados cuando se modifica código o se completan tareas. Revisarlos siempre:

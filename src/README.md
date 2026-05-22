@@ -52,7 +52,7 @@ Transforma el CSV crudo de etiquetas + archivos FASTA en features `.npy` listos 
 - **`constants.py`** — Constantes compartidas: `KMER_SIZES` (3,4,5), `TOTAL_KMER_DIM` (1344), `BIGRU_PAD_DIM` (1024), `RANDOM_SEED` (42), ratios de split, `BASE_TO_INDEX`. Hier: `HIER_KMER_K=4`, `HIER_N_SEGMENTS=256`, `HIER_KMER_DIM=256` (v1); multi-escala: `HIER_KMER_SIZES=[3,4,5]`, `HIER_KMER_DIM_MULTI=1344` (v2).
 - **`cleaning.py`** — `LabelCleaner`: elimina pares contradictorios y duplicados consistentes del CSV de etiquetas. `GenomeFilter`: filtra genomas por disponibilidad de FASTA y longitud mínima (0.5 Mb).
 - **`features.py`** — `KmerExtractor`: histogramas de k-meros (k=3,4,5) con rolling hash O(n); genera vector MLP (1344-dim) y matriz BiGRU ([1024, 3]). `to_tiled_histogram_matrix()` para HierSet v1 (256 × 256) y `to_tiled_multiscale_matrix()` para HierSet v2 (256 × 1344). También contiene `split_genomes()` (split estratificado 70/15/15 por genome_id), `normalize_features()` (z-score con estadísticas solo del train set), `build_antibiotic_index()` y `mlp_vector_to_bigru_matrix()`.
-- **`pipeline.py`** — `run_pipeline()`: orquestador del preprocesamiento (limpieza → filtro → índice antibióticos → split → k-meros → normalización). `extract_and_save_hier()` y `extract_and_save_hier_multi()` para las features jerárquicas v1 y v2.
+- **`pipeline.py`** — `run_pipeline()`: orquestador del preprocesamiento (limpieza → filtro → índice antibióticos → split → k-meros → normalización), con soporte opcional para `locked_splits`. `extract_and_save_hier()` y `extract_and_save_hier_multi()` para las features jerárquicas v1 y v2.
 
 ### `eda.py` — Análisis exploratorio
 
@@ -83,11 +83,13 @@ El CLI está en `main.py` (raíz del proyecto), no en `src/`. Usa Typer y expone
 
 | Comando | Módulo que invoca | Qué hace |
 |---|---|---|
-| `download-amr` | `bvbrc.amr` | Descarga etiquetas AMR de BV-BRC para organismos ESKAPE |
-| `download-genomes` | `bvbrc.genomes` | Descarga FASTAs de los genome_id del CSV de etiquetas |
+| `download-amr` | `bvbrc.amr` | Descarga etiquetas AMR de BV-BRC (ESKAPE por defecto; `--all-taxa` para dataset expandido) |
+| `download-genomes` | `bvbrc.genomes` | Descarga FASTAs de los genome_id del CSV de etiquetas; soporta `--n-jobs` |
 | `eda` | `eda` | Análisis exploratorio completo con reporte en consola |
+| `eda-expanded` | `eda` | EDA reproducible del dataset expandido all-taxa |
 | `export-contradictions-cmd` | `eda` | Exporta pares con etiquetas contradictorias a CSV |
-| `prepare-data` | `data_pipeline.pipeline` | Pipeline completo: limpieza → filtro → split → k-meros → normalización |
+| `prepare-labels-for-download` | `data_pipeline.pipeline` | Limpia labels expandidos antes de descargar FASTA |
+| `prepare-data` | `data_pipeline.pipeline` | Pipeline completo: limpieza → filtro → split → k-meros → normalización; soporta `--locked-splits` |
 | `prepare-hier` | `data_pipeline.pipeline` | Extrae histogramas segmentados (HIER_N_SEGMENTS×256) para HierBiGRU y HierSet |
 | `prepare-hier-multi` | `data_pipeline.pipeline` | Extrae histogramas multi-escala segmentados (HIER_N_SEGMENTS×1344, k=3,4,5) para HierSet v2 |
 | `train-mlp` | `models.mlp` | Entrena el MLP y evalúa sobre test set |
@@ -95,6 +97,7 @@ El CLI está en `main.py` (raíz del proyecto), no en `src/`. Usa Typer y expone
 | `train-multi-bigru` | `models.multi_bigru` | Entrena el encoder multi-stream order-independent |
 | `train-hier-bigru` | `models.hier_bigru` | Entrena la HierBiGRU sobre histogramas segmentados |
 | `train-hier-set` | `models.hier_set` | Entrena el HierSet (encoder de conjunto) — mejor modelo |
+| `evaluate-hier-set-checkpoint` | `models.hier_set` | Evalúa un checkpoint HierSet sin reentrenar, con filtro opcional `split_source` |
 | `train-hier-set-v2` | `models.hier_set_v2` | Entrena el HierSet v2 (multi-head attention + multi-escala) |
 
 ## Flujo de datos

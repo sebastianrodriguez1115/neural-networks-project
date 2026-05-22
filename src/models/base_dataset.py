@@ -22,20 +22,36 @@ class BaseAMRDataset(Dataset, ABC):
     y delega la carga de datos genómicos específicos a las subclases.
     """
 
-    def __init__(self, data_dir: str | Path, split: str) -> None:
+    def __init__(
+        self,
+        data_dir: str | Path,
+        split: str,
+        split_source: str | None = None,
+    ) -> None:
         """
         Inicializa el dataset cargando metadatos comunes.
 
         Parámetros:
             data_dir: directorio con los outputs del pipeline.
             split: partición a cargar ("train", "val" o "test").
+            split_source: fuente opcional del split, por ejemplo "locked" o "new".
         """
         data_dir = Path(data_dir)
         self._split = split
 
         # Leer splits y filtrar por partición
         splits = pandas.read_csv(data_dir / "splits.csv", dtype={"genome_id": str})
-        split_ids = set(splits[splits["split"] == split]["genome_id"])
+        split_mask = splits["split"] == split
+        if split_source is not None:
+            if "split_source" not in splits.columns:
+                raise ValueError(
+                    "splits.csv no contiene split_source; ejecuta prepare-data con --locked-splits."
+                )
+            split_mask = split_mask & (splits["split_source"] == split_source)
+        split_ids = set(splits[split_mask]["genome_id"])
+        if not split_ids:
+            source_msg = f" y split_source={split_source}" if split_source else ""
+            raise ValueError(f"No hay genomas para split={split}{source_msg}")
 
         # Leer etiquetas limpias y filtrar por genomas del split
         labels = pandas.read_csv(
@@ -57,6 +73,8 @@ class BaseAMRDataset(Dataset, ABC):
         self._vectors: list[torch.Tensor] = []
         self._antibiotic_idxs: list[int] = []
         self._labels: list[float] = []
+        self._genome_ids: list[str] = []
+        self._antibiotics: list[str] = []
 
         for _, row in labels.iterrows():
             self._vectors.append(genome_data[row["genome_id"]])
@@ -64,6 +82,8 @@ class BaseAMRDataset(Dataset, ABC):
             self._labels.append(
                 1.0 if row["resistant_phenotype"] == "Resistant" else 0.0
             )
+            self._genome_ids.append(row["genome_id"])
+            self._antibiotics.append(row["antibiotic"])
 
     @abstractmethod
     def _load_genome_data(
@@ -81,6 +101,16 @@ class BaseAMRDataset(Dataset, ABC):
         ab_idx = torch.tensor(self._antibiotic_idxs[idx], dtype=torch.long)
         label = torch.tensor(self._labels[idx], dtype=torch.float32)
         return genome_tensor, ab_idx, label
+
+    @property
+    def records(self) -> pandas.DataFrame:
+        """Metadata de muestras en el mismo orden que __getitem__."""
+        return pandas.DataFrame(
+            {
+                "genome_id": self._genome_ids,
+                "antibiotic": self._antibiotics,
+            }
+        )
 
     @staticmethod
     def load_pos_weight(data_dir: str | Path) -> float:

@@ -1,5 +1,42 @@
 # CHANGELOG
 
+### 2026-05-20
+
+#### Dataset AMR expandido - planificación
+- Creado `docs/PLAN_DATASET_EXPANDIDO.md` con el plan para expandir el dataset más allá de ESKAPE usando los mismos filtros de calidad del EDA.
+- Definida la regla de congelamiento del baseline actual: no sobrescribir `data/processed/`, `data/raw/fasta/` ni `results/hier_set/`.
+- Definida la evaluación obligatoria contra el test ESKAPE congelado, además del test expandido y métricas por taxon/antibiótico.
+- Actualizado `docs/PROGRESS.md` con la nueva Fase 8 y `AGENTS.md` con la nueva documentación de referencia.
+
+#### Dataset AMR expandido - descarga de labels
+- `download-amr` ahora soporta `--all-taxa`, `--exclude-eskape` y `--typing-method` para preparar datasets AMR fuera del alcance ESKAPE sin cambiar el comportamiento por defecto.
+- `src/bvbrc/amr.py` permite construir queries sin filtro `taxon_id`, filtrar por método de laboratorio y excluir taxones localmente después de la descarga.
+- Agregados tests unitarios para el modo all-taxa, validación de argumentos y exclusión local de taxones.
+- Descargado `data/expanded/raw/amr_labels_non_eskape.csv`: 220898 registros no-ESKAPE, 28624 genomas, 576 taxones, 104 antibióticos, 100% `Broth dilution`.
+- Creado `data/expanded/raw/amr_labels_all_taxa.csv` combinando las etiquetas ESKAPE originales con las no-ESKAPE: 383068 registros, 44905 genomas, 581 taxones y 125 antibióticos.
+- Agregado `data/expanded/` a `.gitignore` para evitar versionar artefactos grandes de datos.
+- Cambiado el orden de `LabelCleaner`: el filtro de frecuencia mínima de antibióticos ahora se aplica después de eliminar contradicciones y duplicados, para contar solo pares útiles finales.
+- Agregado el comando `prepare-labels-for-download`, que reutiliza `LabelCleaner` para generar labels limpios antes de descargar FASTA.
+- Generado `data/expanded/processed/labels_for_download.csv`: 282997 registros, 37892 genomas, 581 taxones, 100 antibióticos, sin duplicados ni contradicciones y con 100% `Broth dilution`.
+- `download-genomes` ahora soporta `--n-jobs` para descarga paralela de FASTA manteniendo el modo secuencial por defecto.
+- Descargados FASTA expandidos en `data/expanded/fasta`: 37892/37892 genomas requeridos disponibles; se reutilizan FASTA ESKAPE existentes mediante symlinks y se descargaron los faltantes con `--n-jobs 8` sin fallos reportados.
+- `prepare-data` ahora soporta `--locked-splits`: los genomas presentes en el CSV congelado conservan su split original y los genomas nuevos se dividen 70/15/15 con la política existente.
+- `splits.csv` agrega `split_source` (`locked`/`new`) cuando se usa `--locked-splits`, para poder evaluar el test ESKAPE congelado dentro del dataset expandido.
+- Ejecutado `prepare-data` expandido con splits congelados: 282716 registros finales, 37678 genomas válidos, 214 descartados por longitud, features MLP/BiGRU generadas para todos los genomas válidos.
+- Validación de splits bloqueados: 9060/9060 genomas ESKAPE originales conservaron su split; 0 genomas del test ESKAPE pasaron a train/val. El split expandido quedó en `train=26373`, `val=5651`, `test=5654`, con `split_source`: 9060 `locked` y 28618 `new`.
+- Ejecutado `prepare-hier` expandido: 37678 matrices segmentadas generadas en `data/expanded/processed/hier_bigru/`, con shape validada `(256, 256)` y dtype `float32`.
+- Entrenado `HierSet` sobre el dataset expandido en `results/hier_set_expanded/`: early stopping en época 70; test expandido completo F1=0.8129, Recall=0.8075, AUC=0.9355.
+- Agregado `evaluate-hier-set-checkpoint`, que evalúa checkpoints HierSet sin reentrenar y permite filtrar por `split_source` (`locked`/`new`).
+- Evaluado `HierSet_expanded` sobre test ESKAPE congelado: F1=0.8874, Recall=0.9039, AUC=0.9384. En test nuevo: F1=0.7361, Recall=0.7130, AUC=0.9184.
+- Generadas métricas por antibiótico y por `taxon_id` para test completo, `locked` y `new` en `results/hier_set_expanded/`. En `new`, varios antibióticos quedan con F1/Recall 0 con el umbral global, señalando un problema de calibración/heterogeneidad.
+- Entrenado `BiGRU` sobre el dataset expandido en `results/bigru_expanded/` con `batch_size=128`, `pos_weight_scale=2.5` y `patience=15`. Resultado: test completo F1=0.7683, Recall=0.7830, AUC=0.9009; test ESKAPE congelado F1=0.8481, Recall=0.8771, AUC=0.8888; test nuevo F1=0.6878, Recall=0.6908, AUC=0.8847.
+- Documentado el EDA del dataset expandido en `docs/2_eda.md`, incluyendo conteos de limpieza, balance `locked`/`new`, cola taxonómica, distribución por antibiótico y confounds nuevos.
+- Agregado el comando `eda-expanded`, que reproduce el EDA expandido desde `data/expanded/raw/amr_labels_all_taxa.csv` y `data/expanded/processed/`.
+- Ajustado `pos_weight_scale` para HierSet expandido: se entrenaron variantes `1.0` y `1.5`. `scale=1.0` quedó como mejor checkpoint provisional (`results/hier_set_expanded_pw1_0/`): test completo F1=0.8273, locked F1=0.8973, new F1=0.7539, AUC locked=0.9463.
+- Creado `docs/term_report/FINAL_REPORT_DRAFT.md`, un borrador Markdown del informe final con objetivo, EDA, arquitecturas, resultados ESKAPE, resultados expandidos, discusión, limitaciones y trabajo futuro.
+- Convertido el borrador del informe final a español.
+- Reemplazada la plantilla IEEE en `docs/term_report/main.tex` por el contenido del borrador en español, agregada referencia BV-BRC en `references.bib` y compilado `docs/term_report/main.pdf`.
+
 ### 2026-05-19
 
 #### Template IEEE LaTeX

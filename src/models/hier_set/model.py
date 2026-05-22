@@ -111,7 +111,7 @@ class AMRHierSet(nn.Module):
         scores = torch.bmm(h, query.unsqueeze(-1)).squeeze(-1)       # [batch, S]
         scores = scores / math.sqrt(D_MODEL)
         alpha = F.softmax(scores, dim=1)                             # [batch, S]
-        context = (alpha.unsqueeze(-1) * h).sum(dim=1)           # [batch, 128]
+        context = (alpha.unsqueeze(-1) * h).sum(dim=1)               # [batch, 128]
         self._attention_weights = alpha.detach()
 
         # 4. Fusión con embedding del antibiótico y clasificación

@@ -136,6 +136,25 @@ def test_label_cleaner_filters_low_frequency_antibiotics(tmp_path):
     assert len(result) == 0
 
 
+def test_label_cleaner_filters_low_frequency_after_dedup_and_contradictions(tmp_path):
+    csv = tmp_path / "labels.csv"
+    _write_labels(csv, [
+        ("1.1", "rare_antibiotic", "Resistant"),
+        ("1.1", "rare_antibiotic", "Resistant"),  # duplicado: queda 1
+        ("1.2", "rare_antibiotic", "Resistant"),
+        ("1.3", "rare_antibiotic", "Resistant"),
+        ("1.3", "rare_antibiotic", "Susceptible"),  # contradictorio: ambas filas salen
+        ("2.1", "common_antibiotic", "Resistant"),
+        ("2.2", "common_antibiotic", "Resistant"),
+        ("2.3", "common_antibiotic", "Susceptible"),
+    ])
+
+    result = LabelCleaner(csv, min_records_per_antibiotic=3).clean()
+
+    assert len(result) == 3
+    assert set(result["antibiotic"]) == {"common_antibiotic"}
+
+
 # ── GenomeFilter ───────────────────────────────────────────────────────────────
 
 

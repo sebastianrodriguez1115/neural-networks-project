@@ -11,115 +11,218 @@
 
 \begin{document}
 
-\title{Prediction of Antimicrobial Resistance from Whole-Genome Sequences Using Neural Networks}
+\title{Prediccion de Resistencia Antimicrobiana desde Genomas Completos Usando Redes Neuronales}
 
-\author{First Author, Second Author, Third Author, and Fourth Author%
-\thanks{Neural Networks, 2026-I. Term project final report. Replace this note with team ID, affiliations, and submission metadata.}}
+\author{Autor 1, Autor 2, Autor 3 y Autor 4%
+\thanks{Redes Neuronales, 2026-I. Informe final del proyecto. Pendiente: reemplazar con nombres, equipo, afiliaciones y metadatos de entrega.}}
 
-\markboth{Neural Networks, 2026-I}{Term Project Final Report}
+\markboth{Redes Neuronales, 2026-I}{Informe Final del Proyecto}
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Placeholder: summarize the problem, dataset, shallow neural network approach, deep neural network approach, final metrics, and main conclusion in 150--250 words. The abstract should be self-contained and written as one paragraph.
+La resistencia antimicrobiana (RAM) es un problema clinico critico porque clasificar una bacteria resistente como susceptible puede llevar a un tratamiento inefectivo. Este proyecto evalua modelos de redes neuronales para predecir RAM binaria a partir de secuenciacion del genoma completo (WGS, por \textit{Whole-Genome Sequencing}), es decir, la lectura de la secuencia de ADN completa o casi completa de una bacteria. Usamos archivos FASTA, un formato de texto para almacenar secuencias de ADN, y etiquetas fenotipicas publicas de BV-BRC. Cada muestra es un par genoma-antibiotico y el antibiotico entra al modelo como un embedding aprendido. Primero se construyo un benchmark ESKAPE y se compararon un perceptron multicapa, modelos BiGRU y modelos jerarquicos basados en histogramas locales de k-meros. El mejor modelo ESKAPE fue HierSet, un encoder de conjunto invariante a permutaciones sobre 256 segmentos de histogramas k=4 con atencion condicionada por antibiotico. En el benchmark ESKAPE obtuvo F1=0.8900, recall=0.9088 y AUC=0.9368; con un umbral clinico de 0.40 alcanzo recall=0.9289 con una caida pequena de F1. Luego se expandio el dataset mas alla de ESKAPE, manteniendo congelado el test ESKAPE original. El dataset expandido mejoro el test ESKAPE congelado cuando se recalibro \texttt{pos\_weight\_scale} a 1.0: F1=0.8973, recall=0.9261 y AUC=0.9463. Sin embargo, el rendimiento en nuevos taxones siguio siendo menor (F1=0.7539). La conclusion principal es que HierSet es la mejor arquitectura probada y que mas datos pueden mejorar el benchmark ESKAPE si se ajusta correctamente el manejo del desbalance. La generalizacion multi-taxon sigue limitada por shift de distribucion, confounding taxonomico y calibracion.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Antimicrobial resistance, deep learning, k-mers, neural networks, whole-genome sequencing.
+Resistencia antimicrobiana, aprendizaje profundo, k-meros, redes neuronales, secuenciacion genomica completa.
 \end{IEEEkeywords}}
 
 \maketitle
 \IEEEdisplaynontitleabstractindextext
 \IEEEpeerreviewmaketitle
 
-\section{Project Goal and Scope}
-\IEEEPARstart{P}{laceholder}: state the project goal in a few executive sentences. Include the biological problem, the prediction target, and the intended scope of the shallow and deep neural network approaches.
+\section{Objetivo y Alcance}
+\IEEEPARstart{E}{l} objetivo del proyecto es predecir si un genoma bacteriano es resistente o susceptible a un antibiotico dado usando features derivadas de WGS y redes neuronales. En este informe, WGS significa secuenciacion del genoma completo: no se analiza solo un gen aislado, sino la composicion de la secuencia de ADN disponible para todo el genoma bacteriano. Cada registro corresponde a un par \texttt{(genome\_id, antibiotic)} con una etiqueta binaria: resistente o susceptible.
 
-\section{Literature Review}
-Placeholder: define antimicrobial resistance, whole-genome sequencing, k-mers, binary classification, shallow neural networks, recurrent neural networks, attention, and evaluation metrics. Cite the most relevant background sources, for example neural network textbooks and AMR/WGS references \cite{haykin2009,goodfellow2016}.
+El alcance inicial fue un benchmark sobre organismos ESKAPE usando datos de BV-BRC \cite{olson2023bvbrc}. Despues se agrego un experimento expandido all-taxa para evaluar si mas datos publicos de RAM mejoran la generalizacion sin contaminar el test ESKAPE original.
 
-\section{Case Study}
-Placeholder: describe the specific paper or documented advance that motivates the project. Explain why it is relevant, what part of the approach it supports, and what limitations remain for this project.
+El proyecto compara tres familias de modelos: un baseline superficial MLP sobre histogramas globales de k-meros, modelos recurrentes BiGRU con atencion y modelos jerarquicos tipo conjunto. La arquitectura seleccionada es HierSet porque obtiene el mejor F1/AUC en ESKAPE y tambien es la mas fuerte en los experimentos expandidos.
 
-\section{Training Data Set}
-Placeholder: describe the source of the data, organisms included, antimicrobial susceptibility labels, number of genomes, number of genome-antibiotic records, class balance, and train/validation/test split. Clarify whether the split is stratified by genome ID.
+\section{Contexto y Fundamentos}
+La prediccion de RAM desde genomas completos es un problema de clasificacion supervisada con relevancia clinica y epidemiologica \cite{boolchandani2019,koser2014,ren2022}. El modelo debe aprender relaciones entre contenido genomico y susceptibilidad antimicrobiana. El genoma puede contener genes de resistencia, mutaciones puntuales, elementos moviles y senales taxonomicas. Como los genomas son largos y variables, la representacion de entrada es decisiva.
 
-\section{Data Preprocessing and Exploratory Data Analysis}
-Placeholder: describe data cleaning, label normalization, FASTA processing, k-mer extraction, feature normalization, and exploratory analysis. Include the key plots and tables needed to summarize class imbalance, species distribution, antibiotic distribution, missingness, and relevant feature properties.
+Los histogramas de k-meros son una representacion practica porque resumen composicion de ADN sin requerir alineamiento ni anotacion genetica \cite{compeau2014}. Un k-mero es una subsecuencia de ADN de longitud $k$; por ejemplo, si $k=4$, \texttt{ATGC} es un k-mero. Un histograma de k-meros cuenta con que frecuencia aparece cada posible subsecuencia. En este proyecto se usaron histogramas globales k=3,4,5 para MLP y BiGRU, e histogramas segmentados k=4 para HierSet. Los modelos se entrenaron con principios estandar de aprendizaje profundo, incluyendo regularizacion, optimizacion con AdamW, seleccion de umbral en validacion y early stopping \cite{haykin2009,goodfellow2016,srivastava2014,loshchilov2019}.
 
-\begin{figure}[!t]
+Se probaron redes recurrentes bidireccionales y mecanismos de atencion porque algunos enfoques tratan representaciones genomicas como secuencias \cite{schuster1997,cho2014,bahdanau2015,lugo2021}. Sin embargo, nuestros resultados muestran que tratar bins de histogramas o segmentos genomicos como secuencias puede introducir supuestos de orden artificiales. HierSet elimina ese sesgo al tratar los segmentos como un conjunto y usar atencion condicionada por antibiotico.
+
+\section{Caso de Estudio}
+BV-BRC integra recursos bacterianos y virales, incluyendo genomas, metadatos y fenotipos de susceptibilidad antimicrobiana \cite{olson2023bvbrc}. Este proyecto usa BV-BRC como caso de estudio porque permite construir pares genoma-antibiotico a escala, descargar secuencias FASTA y comparar modelos sobre un benchmark reproducible.
+
+La pregunta practica es si una red neuronal puede aprender una funcion $f(g,a)$ que, dado un genoma $g$ y un antibiotico $a$, prediga resistencia binaria. La dificultad no esta solo en entrenar una red, sino en evitar leakage por genoma, controlar desbalance, separar especies conocidas de nuevos taxones y distinguir senal biologica de shortcuts taxonomicos.
+
+\section{Datos}
+Los datos provienen de BV-BRC. Las etiquetas fenotipicas AMR se descargaron desde \texttt{genome\_amr} y las secuencias genomicas desde endpoints de genomas. El benchmark original incluyo organismos ESKAPE, excepto \textit{Enterobacter spp.}, que no aparecio de forma limpia en el endpoint AMR usado. El dataset raw ESKAPE inicial tenia 162,170 registros, 16,281 genomas unicos, 96 antibioticos y 5 taxones ESKAPE.
+
+El dataset expandido all-taxa tuvo 383,068 registros raw, 44,905 genomas, 581 taxones y 125 antibioticos. Despues de limpieza previa para descarga, quedaron 282,997 registros, 37,892 genomas, 581 taxones y 100 antibioticos. El dataset efectivo despues del filtro genomico tuvo 282,716 registros y 37,678 genomas.
+
+\section{Limpieza y EDA}
+\subsection{Reglas de Limpieza}
+Las reglas finales se derivaron del EDA. Se conservaron solo evidencias de laboratorio, fenotipos binarios \textit{Resistant} y \textit{Susceptible}, y metodo \texttt{Broth dilution}. Luego se eliminaron pares contradictorios \texttt{(genome\_id, antibiotic)} con etiquetas R y S simultaneas, se deduplicaron pares consistentes, se conservaron antibioticos con al menos 20 registros utiles, se exigio FASTA disponible y se filtraron genomas menores a 0.5 Mb.
+
+En el dataset expandido, la limpieza removio 75,465 registros con metodo distinto a \texttt{Broth dilution}, 1,833 pares contradictorios equivalentes a 3,809 filas, 20,749 duplicados consistentes, 8 antibioticos de baja frecuencia equivalentes a 48 filas, y 214 genomas por longitud menor a 0.5 Mb.
+
+\subsection{Hallazgos en ESKAPE}
+El benchmark ESKAPE original tenia un balance global cercano a 54\% resistente y 46\% susceptible. Sin embargo, el balance variaba mucho por especie y antibiotico. Por ejemplo, \textit{A. baumannii} era mayoritariamente resistente, mientras \textit{S. aureus} era mayoritariamente susceptible. Esto crea un riesgo de confounding: los k-meros codifican identidad taxonomica, por lo que el modelo podria aprender priors por especie en vez de mecanismos de resistencia.
+
+El baseline sin informacion genomica fue la clase mayoritaria por antibiotico, con accuracy=71.2\%, precision=0.7281, recall=0.7453 y F1=0.7366. El criterio de exito del proyecto fue superar F1=0.85 con recall clinicamente util.
+
+\subsection{Hallazgos en el Dataset Expandido}
+El dataset expandido cambio fuertemente la distribucion: 101,350 registros resistentes y 181,366 susceptibles, balance global de 35.8\% resistente y 64.2\% susceptible, \texttt{pos\_weight}=1.7890 en train, subset \texttt{locked} ESKAPE con 61.3\% resistente y subset \texttt{new} con 25.4\% resistente. Este shift es fuerte: los nuevos taxones son mucho mas susceptibles que el benchmark ESKAPE congelado. Por eso, la configuracion de desbalance que funcionaba en ESKAPE no transfiere directamente.
+
+El dataset expandido tambien tiene una cola taxonomica larga: 581 taxones, mediana de 9 registros por taxon, percentil 75 de 16 registros y un taxon mayor con 52,154 registros. Los antibioticos mas frecuentes tambien cambiaron; aparecen \texttt{isoniazid}, \texttt{ethambutol} y \texttt{pyrazinamide}, lo que confirma que el dataset expandido no es simplemente mas ESKAPE, sino un problema multi-organismo mas heterogeneo.
+
+\section{Ingenieria de Features}
+\subsection{Histogramas Globales de K-meros}
+El MLP uso histogramas concatenados k=3,4,5: 64 bins para k=3, 256 bins para k=4 y 1024 bins para k=5, para un total de 1344 dimensiones. Las features se normalizaron usando media y desviacion estandar del train set para evitar leakage.
+
+\subsection{Representacion BiGRU}
+La BiGRU reutilizo los histogramas k=3,4,5, relleno cada histograma hasta 1024 bins y apilo los tres k como columnas, siguiendo la representacion distribuida de k-meros propuesta para identificacion bacteriana con RNN \cite{lugo2021}. Esto produce una matriz $[1024,3]$. La representacion permite usar una BiGRU, pero impone un orden pseudo-secuencial sobre bins que no son biologicamente secuenciales.
+
+\subsection{Representacion Jerarquica Segmentada}
+La representacion jerarquica divide cada genoma en 256 segmentos contiguos y calcula un histograma k=4 por segmento. El resultado es una matriz $[256,256]$ por genoma. Esto preserva localidad genomica gruesa y cobertura completa.
+
+La motivacion principal para explorar esta arquitectura fue que la senal asociada a resistencia puede ocupar una fraccion muy pequena del genoma completo. Si el modelo recibe solo un histograma global, esa senal puede quedar diluida dentro de millones de bases. Al partir el genoma en secciones, el modelo evalua regiones mas pequenas y puede aprender a asignar mayor peso a segmentos donde aparezcan patrones relevantes para un antibiotico. HierSet trata estos segmentos como un conjunto, una decision importante porque los genes de resistencia y elementos moviles no aparecen en posiciones fijas del genoma.
+
+\section{Modelos Propuestos}
+\subsection{MLP}
+El MLP recibe el vector normalizado de 1344 dimensiones, lo concatena con el embedding del antibiotico y usa dos capas ocultas con dropout. En ESKAPE obtuvo F1=0.8600, recall=0.9165 y AUC=0.9035. Esto confirmo que la composicion global de k-meros contiene senal fuerte para RAM.
+
+\subsection{BiGRU con Atencion}
+La BiGRU procesa la matriz $[1024,3]$ con una GRU bidireccional y atencion de Bahdanau \cite{cho2014,schuster1997,bahdanau2015}. Luego concatena el contexto con el embedding del antibiotico. Su mejor resultado ESKAPE fue F1=0.8566, recall=0.9032 y AUC=0.8998. Cumple el criterio de recall, pero no supera al MLP. La causa probable es que el modelo trata el orden de bins como una secuencia aunque no tenga significado biologico directo.
+
+\subsection{MultiBiGRU y HierBiGRU}
+MultiBiGRU procesa k=3,4,5 en streams separados usando un encoder sin dependencias secuenciales entre bins. Luego fusiona los streams con gates condicionados por antibiotico. Obtuvo F1=0.8514, recall=0.8925 y AUC=0.8944. Fue interpretable, pero no competitivo frente a HierSet.
+
+HierBiGRU procesa la representacion segmentada $[256,256]$ como una secuencia de segmentos. Obtuvo F1=0.8307, recall=0.8788 y AUC=0.8539. Fue un resultado negativo: segmentar el genoma no basta si el modelo impone un sesgo secuencial incorrecto.
+
+\subsection{HierSet}
+HierSet es el mejor modelo. Trata los 256 segmentos como un conjunto y usa cross-attention condicionada por antibiotico, inspirada en la atencion por producto punto escalado \cite{vaswani2017}:
+\begin{equation}
+\mathrm{score}(s,a) = \frac{h_s \cdot q_a}{\sqrt{D}} .
+\end{equation}
+Esto permite atender cualquier segmento sin asumir adyacencia o posicion fija. En ESKAPE obtuvo F1=0.8900, recall=0.9088, precision=0.8720 y AUC=0.9368. Con un umbral clinico $\theta=0.40$ alcanzo F1=0.8876, recall=0.9289, precision=0.8498 y AUC=0.9368.
+
+\subsection{HierSet v2}
+HierSet v2 agrego multi-head attention e histogramas segmentados multi-escala k=3,4,5. Esto aumento la dimension por segmento de 256 a 1344. Obtuvo F1=0.8895, recall=0.8971 y AUC=0.9366. Fue un resultado negativo: no mejoro a HierSet v1 y redujo el recall.
+
+\section{Protocolo de Entrenamiento y Evaluacion}
+El protocolo compartido uso split por \texttt{genome\_id}, no por registro, para evitar leakage; split 70/15/15 train/validation/test; semilla 42; \texttt{BCEWithLogitsLoss} con \texttt{pos\_weight} calculado sobre train; umbral seleccionado en validacion para maximizar F1; early stopping y checkpoint sobre F1 de validacion; gradient clipping en modelos recurrentes \cite{pascanu2013}; y metricas F1, recall, precision, AUC-ROC y accuracy.
+
+Para experimentos expandidos, los splits ESKAPE originales se congelaron con \texttt{locked\_splits}; los genomas nuevos se dividieron por separado; \texttt{splits.csv} incluye \texttt{split\_source} con valores \texttt{locked} y \texttt{new}; y la evaluacion se reporto para \texttt{all}, \texttt{locked} y \texttt{new}.
+
+\section{Resultados}
+\subsection{Benchmark ESKAPE}
+La Tabla~\ref{tab:eskape-results} resume los resultados principales. HierSet fue el mejor modelo del proyecto en F1 y AUC, y el umbral clinico aumento recall con una perdida pequena de F1.
+
+\begin{table*}[!t]
+\caption{Resultados principales en el benchmark ESKAPE.}
+\label{tab:eskape-results}
 \centering
-% \includegraphics[width=\linewidth]{eda_placeholder.pdf}
-\fbox{\parbox{0.9\linewidth}{Placeholder figure: EDA summary, class balance, or data pipeline.}}
-\caption{Placeholder for an exploratory data analysis figure. Replace with a real figure from the project.}
-\label{fig:eda-placeholder}
-\end{figure}
-
-\section{Proposed Neural Network-Based Approaches}
-
-\subsection{Shallow Neural Network-Based Approach}
-Placeholder: describe the shallow baseline model. Explain feature engineering, feature selection or extraction, the final input vector, architecture, activation functions, regularization, optimizer, loss function, and threshold calibration.
-
-\subsection{Deep Neural Network-Based Approach}
-Placeholder: describe the deep model. Explain the selected architecture, input representation, antibiotic embedding, recurrent/attention/set encoder components, classifier head, regularization, optimizer, loss function, and why this architecture was chosen over alternatives.
-
-\subsection{Learning, Validation, and Testing Protocol}
-Placeholder: explain the training loop, validation strategy, early stopping, checkpointing criterion, random seed, class imbalance handling, and final test evaluation protocol.
-
-\section{Performance Evaluation and Final Results}
-Placeholder: report final metrics for the shallow and deep models. Include F1, recall, precision, AUC-ROC, confusion matrix, and any threshold used. Diagnose overfitting or underfitting using training and validation curves.
-
-\begin{table}[!t]
-\caption{Placeholder for Final Model Comparison}
-\label{tab:results-placeholder}
-\centering
-\begin{tabular}{lcccc}
+\small
+\begin{tabular}{lccccp{0.28\textwidth}}
 \toprule
-Model & F1 & Recall & Precision & AUC \\
+Modelo & F1 & Recall & Precision & AUC & Nota \\
 \midrule
-Shallow NN & -- & -- & -- & -- \\
-Deep NN & -- & -- & -- & -- \\
+MLP & 0.8600 & 0.9165 & 0.8100 & 0.9035 & Baseline fuerte \\
+BiGRU + Attention & 0.8566 & 0.9032 & -- & 0.8998 & Cumple recall \\
+MultiBiGRU & 0.8514 & 0.8925 & -- & 0.8944 & Recall borderline \\
+HierBiGRU & 0.8307 & 0.8788 & -- & 0.8539 & Resultado negativo \\
+HierSet & 0.8900 & 0.9088 & 0.8720 & 0.9368 & Mejor ESKAPE \\
+HierSet $\theta=0.40$ & 0.8876 & 0.9289 & 0.8498 & 0.9368 & Umbral clinico \\
+HierSet v2 & 0.8895 & 0.8971 & -- & 0.9366 & No mejora v1 \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
-\section{Ethical Considerations and Questions}
-Placeholder: discuss clinical risk, false negatives, false positives, dataset bias, generalization limits, transparency, reproducibility, privacy, and responsible communication of model limitations.
+\subsection{Dataset Expandido}
+El primer entrenamiento expandido reutilizo \texttt{pos\_weight\_scale}=2.5 del setup ESKAPE. En test completo obtuvo F1=0.8129, recall=0.8075, precision=0.8184 y AUC=0.9355. En el subset \texttt{locked} obtuvo F1=0.8874, recall=0.9039 y AUC=0.9384; en \texttt{new}, F1=0.7361, recall=0.7130 y AUC=0.9184. Esto no mejoro claramente el test ESKAPE congelado y tuvo bajo F1/recall en nuevos taxones, aunque el AUC siguio siendo razonable.
 
-\section{Web Links to Source Code and Explanatory Video}
+El EDA expandido mostro que \texttt{pos\_weight} de train subio a 1.7890. Multiplicarlo por 2.5 daba un peso efectivo de 4.4725, demasiado agresivo para un dataset donde \texttt{new} es mayoritariamente susceptible. Por eso se probaron \texttt{pos\_weight\_scale}=1.0 y 1.5. La Tabla~\ref{tab:expanded-results} muestra que 1.0 fue la mejor configuracion.
 
-\subsection{Source Code}
-Placeholder: provide the GitHub repository or equivalent URL. Briefly explain how the repository is organized and where the shallow and deep model implementations can be found.
+\begin{table*}[!t]
+\caption{Ajuste de \texttt{pos\_weight\_scale} para HierSet en el dataset expandido.}
+\label{tab:expanded-results}
+\centering
+\small
+\begin{tabular}{l l c c c c c}
+\toprule
+Scale & Subset & F1 & Recall & Precision & AUC & Umbral \\
+\midrule
+1.0 & all & 0.8273 & 0.8255 & 0.8290 & 0.9421 & 0.5274 \\
+1.0 & locked & 0.8973 & 0.9261 & 0.8702 & 0.9463 & 0.5274 \\
+1.0 & new & 0.7539 & 0.7271 & 0.7828 & 0.9260 & 0.5274 \\
+1.5 & all & 0.8152 & 0.8299 & 0.8009 & 0.9363 & 0.5675 \\
+1.5 & locked & 0.8883 & 0.9221 & 0.8568 & 0.9377 & 0.5675 \\
+1.5 & new & 0.7408 & 0.7397 & 0.7419 & 0.9197 & 0.5675 \\
+2.5 & all & 0.8129 & 0.8075 & 0.8184 & 0.9355 & 0.7302 \\
+2.5 & locked & 0.8874 & 0.9039 & 0.8716 & 0.9384 & 0.7302 \\
+2.5 & new & 0.7361 & 0.7130 & 0.7608 & 0.9184 & 0.7302 \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
-\subsection{Explanatory Video}
-Placeholder: provide the URL to the explanatory video and summarize what the video covers.
+La mejor configuracion expandida fue HierSet entrenado sobre el dataset all-taxa con \texttt{pos\_weight\_scale}=1.0. Esta configuracion fue la mas equilibrada: mejoro el test ESKAPE congelado y tambien obtuvo el mejor F1 en los nuevos taxones frente a las variantes con \texttt{pos\_weight\_scale}=1.5 y 2.5. Este fue el primer resultado claramente positivo del dataset expandido sobre el test ESKAPE congelado: F1 subio de 0.8900 a 0.8973, recall de 0.9088 a 0.9261 y AUC de 0.9368 a 0.9463. Sin embargo, \texttt{new} sigue por debajo de \texttt{locked}, por lo que el modelo no esta resuelto para generalizacion multi-taxon.
 
-\section{Contributions of the Team Members}
-Placeholder: describe roles, responsibilities, and concrete contributions. Replace Table~\ref{tab:team-contributions} with the final team information.
+Como control, se entreno BiGRU expandido con \texttt{batch\_size}=128, \texttt{pos\_weight\_scale}=2.5 y \texttt{patience}=15. Obtuvo F1=0.7683, recall=0.7830 y AUC=0.9009 en test completo; F1=0.8481, recall=0.8771 y AUC=0.8888 en \texttt{locked}; y F1=0.6878, recall=0.6908 y AUC=0.8847 en \texttt{new}. BiGRU no se beneficio de la expansion y rindio peor que HierSet en todos los cortes.
+
+\section{Discusion}
+El hallazgo arquitectonico principal es que los supuestos de orden importan, pero tambien importa la escala a la que se busca la senal. La resistencia puede depender de genes, mutaciones o elementos moviles que representan una proporcion pequena del genoma. Los histogramas globales de k-meros ya son fuertes, pero pueden diluir senales locales. Procesarlos con modelos recurrentes puede agregar sesgos de orden artificiales. HierSet funciona mejor porque combina informacion local por segmentos con una atencion que no fuerza adyacencia ni posicion fija, lo que ayuda al modelo a buscar patrones relevantes en regiones mas pequenas del genoma.
+
+El hallazgo de datos principal es que mas datos no garantizan mejor rendimiento. La expansion introdujo shifts fuertes en prior de clase, composicion taxonomica y distribucion de antibioticos. Cuando se recalibro \texttt{pos\_weight\_scale}, el entrenamiento expandido si mejoro el test ESKAPE congelado. Pero \texttt{new} siguio teniendo F1/recall bajos.
+
+La diferencia entre AUC y F1 en \texttt{new} sugiere un problema de calibracion y umbral. El AUC razonable indica que el modelo rankea muchos resistentes por encima de susceptibles. El F1 bajo indica que un unico umbral global no transfiere bien entre \texttt{locked} y \texttt{new}, que tienen tasas base muy distintas.
+
+\section{Consideraciones Eticas}
+La prediccion de RAM tiene riesgo clinico. Un falso negativo, predecir susceptible cuando la bacteria es resistente, puede llevar a tratamiento inefectivo. Por eso el recall es una metrica prioritaria. Un falso positivo tambien puede causar danos al empujar el uso innecesario de antibioticos de reserva.
+
+El modelo no debe interpretarse como herramienta diagnostica clinica sin validacion externa. Las etiquetas provienen de bases publicas y pueden contener sesgo de muestreo, desbalance taxonomico, estandares de laboratorio heterogeneos y sobrerrepresentacion regional. Los experimentos expandidos muestran que el rendimiento varia por taxon y antibiotico.
+
+Uso responsable requiere reportar metricas por subgrupo, mantener splits de test congelados, evitar afirmar generalizacion amplia sin validacion externa, documentar calibracion y umbrales, y usar predicciones como apoyo, no como reemplazo de pruebas de laboratorio.
+
+\section{Limitaciones y Trabajo Futuro}
+El modelo usa composicion de k-meros, no anotaciones explicitas de genes de resistencia, plasmidos, mutaciones o elementos moviles. El dataset expandido tiene cola taxonomica larga, con muchos taxones de bajo soporte. El conjunto de antibioticos cambia con la expansion, dificultando comparaciones directas. No se midio calibracion con ECE o reliability diagrams, no hubo validacion externa fuera de BV-BRC y no se aplicaron pruebas estadisticas formales sobre diferencias de metricas.
+
+El trabajo futuro mas importante es agregar features biologicas explicitas desde CARD, ResFinder o AMRFinderPlus; medir calibracion con ECE, Brier score y reliability diagrams; probar calibracion de umbral por \texttt{split\_source}, antibiotico y taxones de alto soporte; evaluar en un dataset externo fuera de BV-BRC; comparar contra baselines simples taxon-antibiotico para medir shortcuts taxonomicos; y explorar modelos hibridos que combinen k-meros y anotaciones de genes.
+
+\section{Repositorio y Video}
+\subsection{Codigo Fuente}
+Pendiente: URL final del repositorio. La organizacion principal del codigo esta en \texttt{src/bvbrc/} para descarga de datos, \texttt{src/data\_pipeline/} para limpieza y features, \texttt{src/models/} para datasets y modelos, \texttt{src/train/} para entrenamiento y evaluacion, y \texttt{main.py} como CLI.
+
+\subsection{Video Explicativo}
+Pendiente: URL del video explicativo. El video deberia cubrir objetivo, datos, EDA, modelos, resultados ESKAPE, experimento expandido, limitaciones y conclusiones.
+
+\section{Contribuciones del Equipo}
+Pendiente: nombres de integrantes y distribucion final de contribuciones. La Tabla~\ref{tab:team-contributions} conserva la estructura sugerida.
 
 \begin{table}[!t]
-\caption{Placeholder for Team Contributions}
+\caption{Contribuciones del equipo.}
 \label{tab:team-contributions}
 \centering
-\begin{tabular}{p{0.28\linewidth}p{0.25\linewidth}p{0.32\linewidth}}
+\small
+\begin{tabular}{@{}p{0.24\linewidth}p{0.23\linewidth}p{0.43\linewidth}@{}}
 \toprule
-Team member & Role & Activities/contributions \\
+Integrante & Rol & Actividades \\
 \midrule
-Member 1 & -- & -- \\
-Member 2 & -- & -- \\
-Member 3 & -- & -- \\
-Member 4 & -- & -- \\
+Por definir & Datos & Descarga e integracion BV-BRC \\
+Por definir & EDA & Limpieza, analisis exploratorio y leakage \\
+Por definir & Modelos & Feature engineering, entrenamiento y evaluacion \\
+Por definir & Reporte & Redaccion, tablas, video y reproducibilidad \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Conclusions and Future Work}
-Placeholder: summarize the main findings, compare shallow and deep approaches, identify limitations, and propose future work such as biological annotation, calibration analysis, broader validation, or improved representations.
+\section{Uso de Herramientas de IA}
+Se usaron herramientas de IA para apoyar generacion de codigo, depuracion, refactorizacion, seguimiento experimental y redaccion del informe. La verificacion humana incluyo revisar diffs, ejecutar tests unitarios, correr entrenamientos y evaluaciones, y contrastar metricas contra artefactos guardados. Las conclusiones cientificas se basan en los experimentos ejecutados y documentados en el repositorio.
 
-\section{Use of Artificial Intelligence Tools}
-Placeholder: disclose whether AI tools were used to draft, review, debug, summarize, or generate code. State which tools were used, what parts they supported, and how the team verified the outputs.
+\section{Conclusiones}
+El mejor modelo del proyecto es HierSet, un encoder invariante a permutaciones sobre histogramas segmentados de k-meros, condicionado por el antibiotico. Su diseno responde a una hipotesis concreta: como la senal de resistencia puede ser local y ocupar una fraccion pequena del genoma, segmentar el genoma ayuda a que el modelo busque patrones en regiones mas pequenas en vez de depender solo de una composicion global diluida. En el benchmark ESKAPE obtuvo el mejor rendimiento general y, al usar un umbral conservador de 0.40 orientado a aumentar recall, alcanzo recall=0.9289 con perdida minima de F1. Este umbral no fue validado clinicamente; se uso como simulacion de una preferencia por reducir falsos negativos.
 
-\section*{Acknowledgment}
-Placeholder: optional. Include course, instructor, institutional, or data-source acknowledgments if appropriate.
+El experimento expandido cambio la conclusion de forma matizada. Reutilizar \texttt{pos\_weight\_scale}=2.5 produjo resultados debiles. Al recalibrar \texttt{pos\_weight\_scale}=1.0, el dataset expandido mejoro las metricas sobre el test ESKAPE congelado. Esto sugiere que mas datos pueden ayudar, pero solo si el desbalance se reestima para la nueva distribucion.
+
+Al mismo tiempo, el rendimiento en nuevos taxones sigue siendo sustancialmente menor. Por lo tanto, la afirmacion correcta no es que el proyecto resolvio RAM all-taxa. La afirmacion fuerte es que HierSet fue la mejor arquitectura probada, que los datos expandidos mejoran ESKAPE bajo ponderacion adecuada y que la generalizacion multi-taxon robusta sigue siendo un problema abierto.
+
+\section*{Agradecimientos}
+Se agradece a BV-BRC por disponibilizar recursos publicos de genomas bacterianos y fenotipos AMR. Pendiente: agregar agradecimientos del curso o institucion si aplica.
 
 \bibliographystyle{../ieee_latex_template/IEEEtran}
 \bibliography{references}

@@ -26,6 +26,7 @@ import pandas
 from Bio import SeqIO
 
 from bvbrc import ESKAPE_TAXON_IDS
+from data_pipeline.constants import MIN_RECORDS_PER_ANTIBIOTIC
 
 
 # Mapeo inverso: taxon_id → nombre de especie, para mostrar nombres legibles en el reporte
@@ -109,7 +110,267 @@ def run_eda(labels_path: Path, top_n: int = 20, genomes_dir: Path | None = None)
         _print_genome_analysis(genomes_dir, dataframe)
 
 
+def run_expanded_eda(
+    raw_labels_path: Path,
+    processed_dir: Path,
+    non_eskape_labels_path: Path | None = None,
+    top_n_taxa: int = 10,
+    top_n_antibiotics: int = 10,
+    min_records_per_antibiotic: int = MIN_RECORDS_PER_ANTIBIOTIC,
+) -> None:
+    """Ejecuta EDA reproducible del dataset expandido all-taxa.
+
+    Usa los artefactos generados por `prepare-labels-for-download` y
+    `prepare-data` para distinguir el raw combinado, los labels limpios y el
+    subconjunto efectivo usado por los modelos después del filtro genómico.
+    """
+    raw = pandas.read_csv(raw_labels_path, dtype={"genome_id": str})
+    non_eskape = None
+    if non_eskape_labels_path is not None and non_eskape_labels_path.exists():
+        non_eskape = pandas.read_csv(non_eskape_labels_path, dtype={"genome_id": str})
+
+    processed_dir = Path(processed_dir)
+    labels_for_download = pandas.read_csv(
+        processed_dir / "labels_for_download.csv",
+        dtype={"genome_id": str},
+    )
+    cleaned = pandas.read_csv(
+        processed_dir / "cleaned_labels.csv",
+        dtype={"genome_id": str},
+    )
+    splits = pandas.read_csv(processed_dir / "splits.csv", dtype={"genome_id": str})
+    discarded_path = processed_dir / "discarded_genomes.csv"
+    discarded = (
+        pandas.read_csv(discarded_path, dtype={"genome_id": str})
+        if discarded_path.exists()
+        else pandas.DataFrame(columns=["genome_id", "reason"])
+    )
+    effective = _build_effective_expanded_labels(cleaned, splits, labels_for_download)
+    cleaning = _summarize_expanded_cleaning(
+        raw,
+        min_records_per_antibiotic=min_records_per_antibiotic,
+    )
+
+    _print_section("EDA EXPANDIDO — ALCANCE")
+    _print_expanded_scope(raw, non_eskape, labels_for_download, effective, discarded)
+
+    _print_section("EDA EXPANDIDO — LIMPIEZA")
+    _print_expanded_cleaning(cleaning)
+
+    _print_section("EDA EXPANDIDO — BALANCE")
+    _print_expanded_balance(effective, splits)
+
+    _print_section("EDA EXPANDIDO — TAXONES")
+    _print_expanded_taxa(effective, top_n_taxa)
+
+    _print_section("EDA EXPANDIDO — ANTIBIÓTICOS")
+    _print_expanded_antibiotics(effective, top_n_antibiotics)
+
+    _print_section("EDA EXPANDIDO — CONFOUNDS")
+    _print_expanded_confounds()
+
+
 # ── Secciones del reporte ──────────────────────────────────────────────────────
+
+def _build_effective_expanded_labels(
+    cleaned: pandas.DataFrame,
+    splits: pandas.DataFrame,
+    labels_for_download: pandas.DataFrame,
+) -> pandas.DataFrame:
+    """Intersecta labels limpios con splits y agrega taxon_id para EDA."""
+    split_columns = ["genome_id", "split"]
+    if "split_source" in splits.columns:
+        split_columns.append("split_source")
+    effective = cleaned.merge(splits[split_columns], on="genome_id", how="inner")
+    if "split_source" not in effective.columns:
+        effective["split_source"] = "all"
+
+    if "taxon_id" in labels_for_download.columns:
+        taxon_meta = labels_for_download[["genome_id", "taxon_id"]].drop_duplicates(
+            subset=["genome_id"],
+        )
+        effective = effective.merge(taxon_meta, on="genome_id", how="left")
+
+    return effective
+
+
+def _summarize_expanded_cleaning(
+    raw: pandas.DataFrame,
+    min_records_per_antibiotic: int,
+) -> dict[str, int]:
+    """Replica los conteos principales de limpieza usados en LabelCleaner."""
+    broth = raw[raw["laboratory_typing_method"] == "Broth dilution"].reset_index(drop=True)
+    phenotype_counts = broth.groupby(["genome_id", "antibiotic"])[
+        "resistant_phenotype"
+    ].nunique()
+    contradictory_indices = phenotype_counts[phenotype_counts > 1].index
+    contradictory_mask = broth.set_index(["genome_id", "antibiotic"]).index.isin(
+        contradictory_indices,
+    )
+    without_contradictions = broth[~contradictory_mask].reset_index(drop=True)
+    duplicates_removed = int(
+        without_contradictions.duplicated(subset=["genome_id", "antibiotic"]).sum()
+    )
+    deduplicated = without_contradictions.drop_duplicates(
+        subset=["genome_id", "antibiotic"],
+        keep="first",
+    ).reset_index(drop=True)
+    counts = deduplicated["antibiotic"].value_counts()
+    to_keep = counts[counts >= min_records_per_antibiotic].index
+
+    return {
+        "initial_records": len(raw),
+        "typing_method_removed": len(raw) - len(broth),
+        "contradictory_pairs": len(contradictory_indices),
+        "contradictory_rows": int(contradictory_mask.sum()),
+        "duplicates_removed": duplicates_removed,
+        "low_frequency_antibiotics_removed": len(counts) - len(to_keep),
+        "low_frequency_rows_removed": len(deduplicated)
+        - len(deduplicated[deduplicated["antibiotic"].isin(to_keep)]),
+    }
+
+
+def _print_expanded_scope(
+    raw: pandas.DataFrame,
+    non_eskape: pandas.DataFrame | None,
+    labels_for_download: pandas.DataFrame,
+    effective: pandas.DataFrame,
+    discarded: pandas.DataFrame,
+) -> None:
+    print(
+        f"  Raw combinado all-taxa: {len(raw):,} registros, "
+        f"{raw['genome_id'].nunique():,} genomas, "
+        f"{raw['taxon_id'].nunique():,} taxones, "
+        f"{raw['antibiotic'].nunique():,} antibióticos"
+    )
+    if non_eskape is not None:
+        print(
+            f"  Raw no-ESKAPE:         {len(non_eskape):,} registros, "
+            f"{non_eskape['genome_id'].nunique():,} genomas, "
+            f"{non_eskape['taxon_id'].nunique():,} taxones, "
+            f"{non_eskape['antibiotic'].nunique():,} antibióticos"
+        )
+    print(
+        f"  Labels limpios:        {len(labels_for_download):,} registros, "
+        f"{labels_for_download['genome_id'].nunique():,} genomas, "
+        f"{labels_for_download['taxon_id'].nunique():,} taxones, "
+        f"{labels_for_download['antibiotic'].nunique():,} antibióticos"
+    )
+    print(
+        f"  Dataset efectivo:      {len(effective):,} registros, "
+        f"{effective['genome_id'].nunique():,} genomas"
+    )
+    if discarded.empty:
+        print("  Genomas descartados:   0")
+    else:
+        print(f"  Genomas descartados:   {len(discarded):,}")
+        for reason, count in discarded["reason"].value_counts().items():
+            print(f"    {reason}: {count:,}")
+
+
+def _print_expanded_cleaning(cleaning: dict[str, int]) -> None:
+    print(f"  Registros iniciales:                         {cleaning['initial_records']:>10,}")
+    print(f"  Removidos por método distinto a Broth:       {cleaning['typing_method_removed']:>10,}")
+    print(f"  Pares contradictorios removidos:             {cleaning['contradictory_pairs']:>10,}")
+    print(f"  Filas contradictorias removidas:             {cleaning['contradictory_rows']:>10,}")
+    print(f"  Duplicados consistentes removidos:           {cleaning['duplicates_removed']:>10,}")
+    print(f"  Antibióticos removidos por baja frecuencia:  {cleaning['low_frequency_antibiotics_removed']:>10,}")
+    print(f"  Filas removidas por baja frecuencia:         {cleaning['low_frequency_rows_removed']:>10,}")
+
+
+def _print_expanded_balance(effective: pandas.DataFrame, splits: pandas.DataFrame) -> None:
+    _print_class_balance(effective)
+    train = effective[effective["split"] == "train"]
+    resistant = int((train["resistant_phenotype"] == "Resistant").sum())
+    susceptible = int((train["resistant_phenotype"] == "Susceptible").sum())
+    if resistant > 0:
+        print(f"\n  → pos_weight efectivo en train: {susceptible / resistant:.4f}")
+
+    print("\n  Balance por split_source:")
+    crosstab = pandas.crosstab(
+        effective["split_source"],
+        effective["resistant_phenotype"],
+    )
+    for source, row in crosstab.iterrows():
+        total = int(row.sum())
+        r = int(row.get("Resistant", 0))
+        s = int(row.get("Susceptible", 0))
+        print(
+            f"    {source:<8} {total:>8,} registros  "
+            f"R={r / total * 100:>5.1f}%  S={s / total * 100:>5.1f}%"
+        )
+
+    print("\n  Genomas por split:")
+    for split, count in splits["split"].value_counts().sort_index().items():
+        print(f"    {split:<5} {count:>8,}")
+    print("\n  Genomas por split_source:")
+    for source, count in splits["split_source"].value_counts().items():
+        print(f"    {source:<8} {count:>8,}")
+
+
+def _print_expanded_taxa(effective: pandas.DataFrame, top_n: int) -> None:
+    if "taxon_id" not in effective.columns:
+        print("  No hay columna taxon_id disponible en los artefactos procesados.")
+        return
+    summary = (
+        effective.groupby("taxon_id")
+        .agg(
+            records=("genome_id", "size"),
+            genomes=("genome_id", "nunique"),
+            resistant=("resistant_phenotype", lambda s: int((s == "Resistant").sum())),
+        )
+        .reset_index()
+    )
+    summary["r_pct"] = summary["resistant"] / summary["records"] * 100
+    records = summary["records"]
+    print(
+        f"  Taxones: {len(summary):,}  mediana={records.median():.0f}  "
+        f"p75={records.quantile(0.75):.0f}  max={records.max():,} registros"
+    )
+    header = f"  {'taxon_id':>10} {'Registros':>10} {'Genomas':>8} {'R%':>7}"
+    print("\n" + header)
+    print("  " + "-" * (len(header) - 2))
+    for _, row in summary.sort_values("records", ascending=False).head(top_n).iterrows():
+        print(
+            f"  {int(row['taxon_id']):>10} {int(row['records']):>10,} "
+            f"{int(row['genomes']):>8,} {row['r_pct']:>6.1f}%"
+        )
+
+
+def _print_expanded_antibiotics(effective: pandas.DataFrame, top_n: int) -> None:
+    summary = (
+        effective.groupby("antibiotic")
+        .agg(
+            records=("genome_id", "size"),
+            genomes=("genome_id", "nunique"),
+            resistant=("resistant_phenotype", lambda s: int((s == "Resistant").sum())),
+        )
+        .reset_index()
+    )
+    summary["r_pct"] = summary["resistant"] / summary["records"] * 100
+    records = summary["records"]
+    print(
+        f"  Antibióticos: {len(summary):,}  media={records.mean():.1f}  "
+        f"mediana={records.median():.1f}  p75={records.quantile(0.75):.1f}  "
+        f"min={records.min():,}  max={records.max():,} registros"
+    )
+    header = f"  {'Antibiótico':<35} {'Registros':>10} {'Genomas':>8} {'R%':>7}"
+    print("\n" + header)
+    print("  " + "-" * (len(header) - 2))
+    for _, row in summary.sort_values("records", ascending=False).head(top_n).iterrows():
+        print(
+            f"  {row['antibiotic']:<35} {int(row['records']):>10,} "
+            f"{int(row['genomes']):>8,} {row['r_pct']:>6.1f}%"
+        )
+
+
+def _print_expanded_confounds() -> None:
+    print("  Confounds principales del dataset expandido:")
+    print("    Taxonomía: los k-meros codifican especie/género y pueden inducir atajos.")
+    print("    Shift de clase: locked y new tienen priors Resistant/Susceptible muy distintos.")
+    print("    Antibióticos dominio-específicos: algunos aparecen ligados a taxones concretos.")
+    print("    Cola larga: muchos taxones tienen soporte demasiado bajo para métricas estables.")
+    print("\n  Decisión: reportar métricas por split_source, taxon_id y antibiótico.")
 
 def _print_overview(dataframe: pandas.DataFrame) -> None:
     total_records = len(dataframe)

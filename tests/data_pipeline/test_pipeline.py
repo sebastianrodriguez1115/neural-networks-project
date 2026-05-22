@@ -11,7 +11,14 @@ import pandas
 import pytest
 
 from data_pipeline.constants import BIGRU_PAD_DIM, HIER_KMER_DIM, HIER_N_SEGMENTS, KMER_SIZES, MIN_GENOME_LENGTH, TOTAL_KMER_DIM
-from data_pipeline.pipeline import _extract_single_genome, _extract_single_genome_hier, extract_and_save_hier, run_pipeline
+from data_pipeline.pipeline import (
+    _extract_single_genome,
+    _extract_single_genome_hier,
+    _split_with_locked_genomes,
+    extract_and_save_hier,
+    prepare_labels_for_download,
+    run_pipeline,
+)
 
 # Mínimo de genomas para que split_genomes() funcione con estratificación 70/15/15.
 # Con menos genomas, algún split queda sin representantes de las dos clases.
@@ -102,6 +109,103 @@ def test_run_pipeline_saves_normalization_stats(pipeline_output):
     output_dir, _ = pipeline_output
     assert (output_dir / "mlp_mean.npy").exists()
     assert (output_dir / "mlp_std.npy").exists()
+
+
+def test_prepare_labels_for_download_saves_cleaned_labels(tmp_path):
+    labels_path = tmp_path / "labels.csv"
+    rows = [
+        ("1.1", 111, "rare", "Resistant", "Broth dilution", "CLSI"),
+        ("1.1", 111, "rare", "Resistant", "Broth dilution", "CLSI"),
+        ("1.2", 111, "rare", "Resistant", "Broth dilution", "CLSI"),
+        ("1.3", 111, "rare", "Resistant", "Broth dilution", "CLSI"),
+        ("1.3", 111, "rare", "Susceptible", "Broth dilution", "CLSI"),
+        ("2.1", 222, "common", "Resistant", "Broth dilution", "CLSI"),
+        ("2.2", 222, "common", "Resistant", "Broth dilution", "CLSI"),
+        ("2.3", 222, "common", "Susceptible", "Broth dilution", "CLSI"),
+    ]
+    pandas.DataFrame(
+        rows,
+        columns=[
+            "genome_id",
+            "taxon_id",
+            "antibiotic",
+            "resistant_phenotype",
+            "laboratory_typing_method",
+            "testing_standard",
+        ],
+    ).to_csv(labels_path, index=False)
+    output_path = tmp_path / "processed" / "labels_for_download.csv"
+
+    cleaned = prepare_labels_for_download(
+        labels_path,
+        output_path,
+        min_records_per_antibiotic=3,
+    )
+
+    assert output_path.exists()
+    saved = pandas.read_csv(output_path, dtype={"genome_id": str})
+    assert len(cleaned) == 3
+    assert len(saved) == 3
+    assert set(saved["antibiotic"]) == {"common"}
+
+
+def test_prepare_labels_for_download_rejects_same_input_and_output(tmp_path):
+    labels_path = tmp_path / "labels.csv"
+    _make_labels_csv(labels_path, ["1.1", "1.2", "1.3"])
+
+    with pytest.raises(ValueError):
+        prepare_labels_for_download(labels_path, labels_path)
+
+
+def test_run_pipeline_with_locked_splits_preserves_existing_assignments(tmp_path):
+    genome_ids = [f"4.{i}" for i in range(1, _N_GENOMES + 1)]
+    fasta_dir = tmp_path / "fastas"
+    fasta_dir.mkdir()
+    for gid in genome_ids:
+        _write_fasta(fasta_dir / f"{gid}.fna")
+    labels_path = tmp_path / "labels.csv"
+    _make_labels_csv(labels_path, genome_ids)
+    locked_rows = [
+        {"genome_id": "4.1", "split": "test"},
+        {"genome_id": "4.2", "split": "train"},
+        {"genome_id": "4.3", "split": "val"},
+        {"genome_id": "4.4", "split": "test"},
+    ]
+    locked_path = tmp_path / "locked_splits.csv"
+    pandas.DataFrame(locked_rows).to_csv(locked_path, index=False)
+    output_dir = tmp_path / "output"
+
+    run_pipeline(labels_path, fasta_dir, output_dir, locked_splits_path=locked_path)
+
+    splits = pandas.read_csv(output_dir / "splits.csv", dtype={"genome_id": str})
+    by_genome = splits.set_index("genome_id")
+    assert by_genome.loc["4.1", "split"] == "test"
+    assert by_genome.loc["4.2", "split"] == "train"
+    assert by_genome.loc["4.3", "split"] == "val"
+    assert by_genome.loc["4.4", "split"] == "test"
+    assert set(by_genome.loc[["4.1", "4.2", "4.3", "4.4"], "split_source"]) == {"locked"}
+    assert set(splits["split_source"].unique()) == {"locked", "new"}
+    assert len(splits) == len(genome_ids)
+    assert not by_genome.loc[["4.1", "4.4"], "split"].isin(["train", "val"]).any()
+
+
+def test_split_with_locked_genomes_rejects_duplicate_genomes(tmp_path):
+    cleaned = pandas.DataFrame(
+        {
+            "genome_id": ["dup.1", "dup.2"],
+            "resistant_phenotype": ["Resistant", "Susceptible"],
+        }
+    )
+    locked_path = tmp_path / "locked_splits.csv"
+    pandas.DataFrame(
+        [
+            {"genome_id": "dup.1", "split": "train"},
+            {"genome_id": "dup.1", "split": "test"},
+        ]
+    ).to_csv(locked_path, index=False)
+
+    with pytest.raises(ValueError, match="duplicados"):
+        _split_with_locked_genomes(cleaned, locked_path)
 
 
 # ── Paralelización ─────────────────────────────────────────────────────────────

@@ -28,6 +28,9 @@ uv run python main.py eda --genomes-dir data/raw/fasta_sample
 uv run python main.py eda --genomes-dir data/raw/fasta_sample --labels data/processed/amr_labels.csv
 # Mostrar más antibióticos en el ranking (por defecto: 20):
 uv run python main.py eda --genomes-dir data/raw/fasta_sample --top-n-antibiotics 30
+
+# EDA reproducible del dataset expandido:
+uv run python main.py eda-expanded
 ```
 
 ---
@@ -306,6 +309,136 @@ No se identificó leakage. Las features (k-meros del FASTA) y el target (`resist
 
 ---
 
+## EDA dataset expandido
+
+Esta sección resume el EDA del dataset AMR expandido all-taxa preparado en
+`data/expanded/`. El objetivo es verificar si el nuevo alcance mantiene la
+calidad del benchmark ESKAPE y qué cambios de distribución introduce.
+
+Comando reproducible:
+
+```bash
+uv run python main.py eda-expanded
+```
+
+### Alcance y limpieza
+
+- Raw no-ESKAPE (`amr_labels_non_eskape.csv`): 220,898 registros, 28,624 genomas, 576 taxones, 104 antibióticos. Todos los registros ya están filtrados a `Broth dilution`.
+- Raw combinado all-taxa (`amr_labels_all_taxa.csv`): 383,068 registros, 44,905 genomas, 581 taxones, 125 antibióticos.
+- El raw combinado incluye las etiquetas ESKAPE originales con métodos de laboratorio diversos; por eso la limpieza vuelve a filtrar `Broth dilution`.
+- Registros eliminados por método distinto a `Broth dilution`: 75,465.
+- Pares contradictorios eliminados: 1,833 pares, 3,809 filas.
+- Duplicados consistentes eliminados: 20,749 filas.
+- Antibióticos eliminados por baja frecuencia final: 8 antibióticos, 48 filas.
+- Labels limpios para descarga (`labels_for_download.csv`): 282,997 registros, 37,892 genomas, 581 taxones, 100 antibióticos.
+- Filtro genómico final: 214 genomas descartados por longitud `< 0.5 Mb`.
+- Dataset efectivo usado por los modelos: 282,716 registros y 37,678 genomas válidos.
+
+Nota técnica: `cleaned_labels.csv` conserva las etiquetas limpias antes del filtro genómico. En entrenamiento, las etiquetas efectivas son las que además intersectan con `splits.csv`, por eso el conteo modelado es 282,716 y no 282,997.
+
+### Balance de clases
+
+El dataset expandido cambia fuerte el prior global respecto a ESKAPE.
+
+- Dataset efectivo completo: 101,350 Resistant y 181,366 Susceptible.
+- Balance global: 35.8% Resistant / 64.2% Susceptible.
+- `pos_weight` del train expandido: `126103 / 70488 = 1.7890`.
+- En ESKAPE original el balance era 54% Resistant / 46% Susceptible; la expansión introduce muchos más susceptibles.
+
+Balance por origen del split:
+
+- `locked` ESKAPE: 82,202 registros, 61.3% Resistant, 38.7% Susceptible.
+- `new` no bloqueado: 200,514 registros, 25.4% Resistant, 74.6% Susceptible.
+
+Este shift es severo: el subset nuevo no solo agrega más datos, cambia la tasa base de resistencia. Esto afecta directamente el umbral óptimo y hace riesgoso evaluar solo con métricas globales.
+
+### Splits bloqueados
+
+Política aplicada:
+
+- 9,060 genomas del benchmark ESKAPE conservaron su split original (`split_source=locked`).
+- 28,618 genomas nuevos se dividieron 70/15/15 con semilla 42 (`split_source=new`).
+- No hubo cambios de split para los genomas ESKAPE originales.
+- Ningún genoma del test ESKAPE congelado pasó a train ni val.
+
+Conteo por split, en genomas:
+
+- Train: 26,373.
+- Val: 5,651.
+- Test: 5,654.
+
+Conteo por split, en registros efectivos:
+
+- Train: 196,591 registros.
+- Val: 42,619 registros.
+- Test: 43,506 registros.
+
+### Distribución taxonómica
+
+El dataset expandido tiene una cola taxonómica muy larga.
+
+- Taxones totales: 581.
+- Mediana de registros por taxón: 9.
+- Percentil 75: 16 registros.
+- Máximo: 52,154 registros en `taxon_id=573`.
+
+Taxones principales por registros:
+
+- `taxon_id=573`: 52,154 registros, 4,159 genomas, 64.1% Resistant.
+- `taxon_id=1313`: 47,919 registros, 6,763 genomas, 12.5% Resistant.
+- `taxon_id=1773`: 33,167 registros, 6,858 genomas, 19.2% Resistant.
+- `taxon_id=562`: 32,443 registros, 2,714 genomas, 31.1% Resistant.
+- `taxon_id=1733`: 20,430 registros, 5,551 genomas, 30.2% Resistant.
+- `taxon_id=28901`: 18,593 registros, 1,323 genomas, 20.1% Resistant.
+- `taxon_id=470`: 13,869 registros, 879 genomas, 76.3% Resistant.
+- `taxon_id=1280`: 7,511 registros, 1,098 genomas, 27.9% Resistant.
+- `taxon_id=624`: 5,869 registros, 338 genomas, 46.2% Resistant.
+- `taxon_id=1352`: 4,985 registros, 2,360 genomas, 55.9% Resistant.
+
+Implicación: las métricas por taxón deben reportarse con un mínimo de soporte. Muchos taxones tienen tan pocos registros que F1/AUC por taxón no son estables.
+
+### Distribución por antibiótico
+
+Después de limpieza quedan 100 antibióticos.
+
+- Media de registros por antibiótico: 2,827.
+- Mediana: 680.
+- Percentil 75: 4,617.
+- Mínimo: 23.
+- Máximo: 13,150.
+
+Antibióticos principales por registros:
+
+- `rifampin`: 13,150 registros, 24.8% Resistant.
+- `tetracycline`: 13,092 registros, 42.0% Resistant.
+- `trimethoprim/sulfamethoxazole`: 12,787 registros, 43.7% Resistant.
+- `isoniazid`: 11,771 registros, 31.0% Resistant.
+- `ethambutol`: 11,676 registros, 15.0% Resistant.
+- `ciprofloxacin`: 11,488 registros, 49.1% Resistant.
+- `gentamicin`: 11,416 registros, 31.6% Resistant.
+- `ampicillin`: 10,155 registros, 78.2% Resistant.
+- `ceftriaxone`: 9,137 registros, 44.1% Resistant.
+- `pyrazinamide`: 8,697 registros, 16.1% Resistant.
+
+La aparición de antibióticos asociados a otros dominios clínicos, por ejemplo `isoniazid`, `ethambutol` y `pyrazinamide`, confirma que el dataset expandido no es solo “más ESKAPE”: cambia el problema hacia un benchmark multi-organismo más heterogéneo.
+
+### Confounds nuevos
+
+- **Taxonomía más dominante:** los k-meros codifican fuertemente especie/género. Con 581 taxones, el modelo puede aprender priors taxonómicos más que mecanismos AMR generalizables.
+- **Shift de clase entre `locked` y `new`:** ESKAPE bloqueado es mayoritariamente Resistant; los genomas nuevos son mayoritariamente Susceptible.
+- **Antibióticos dominio-específicos:** algunos antibióticos aparecen casi ligados a ciertos taxones o síndromes clínicos, lo que puede inducir atajos epidemiológicos.
+- **Cola larga:** muchas combinaciones taxón-antibiótico tienen soporte bajo; las métricas globales esconden fallos por subgrupo.
+
+### Decisiones derivadas del EDA expandido
+
+- Mantener el test ESKAPE congelado como benchmark primario para no contaminar la comparación histórica.
+- Reportar siempre métricas separadas por `split_source` (`locked`, `new`, `all`).
+- Reportar métricas por antibiótico y por taxón con umbral mínimo de soporte.
+- No cambiar la narrativa del proyecto a “all-taxa” hasta demostrar mejora clara sobre el test ESKAPE congelado o generalización sólida en `new`.
+- Investigar calibración por subset: el shift de clase sugiere que un único umbral global puede ser insuficiente.
+
+---
+
 ## Decisiones derivadas
 
 - [x] **Dimensión de embedding del antibiótico: 49** → `min(50, (96 // 2) + 1)`
@@ -313,4 +446,3 @@ No se identificó leakage. Las features (k-meros del FASTA) y el target (`resist
 - [x] **Duplicados**: Se conserva el primer registro usando `drop_duplicates(keep='first')` en `src/data_pipeline/cleaning.py`.
 - [x] **Enterobacter ausente**: Se investigó el `taxon_id=547`. El endpoint de AMR de BV-BRC no soporta filtrar por `taxon_lineage_ids`, lo que requeriría una doble consulta (primero genomas, luego AMR por IDs) añadiendo complejidad no justificada. Se excluyó *Enterobacter spp.* del alcance del proyecto.
 - [x] **Filtro de longitud mínima**: Se descartan genomas < 0.5 Mb en el pipeline (`MIN_GENOME_LENGTH = 500_000`).
-
